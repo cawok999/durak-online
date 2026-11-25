@@ -84,7 +84,13 @@ h1{margin:0;font-size:40px;letter-spacing:1px}
 #chatLog div{padding:3px 2px;border-bottom:1px solid #ffffff12}
 #chatReacts{display:flex;gap:4px;flex-wrap:wrap}#chatReacts button{padding:4px 7px;font-size:18px}
 #chatForm{display:flex;gap:6px}#chatForm input{flex:1;min-width:0}#chatForm button{padding:6px 12px}
-@media (max-width:700px){#topbar{padding-right:0;padding-top:44px;min-height:0}#chat{left:6px;right:6px;width:auto;top:46px}}
+#musicPanel{position:fixed;right:8px;top:48px;width:290px;background:#0b2e1fee;border:1px solid #ffffff33;border-radius:14px;display:none;flex-direction:column;z-index:31;padding:12px;gap:10px;box-shadow:0 8px 30px #0008}
+#musicPanel.on{display:flex}
+#musicPanel label{display:flex;align-items:center;gap:8px;font-size:14px}
+#musicPanel input[type=range]{flex:1;accent-color:var(--gold);padding:0;border:0;background:none}
+#musicPanel .val{width:38px;text-align:right;font-size:13px;opacity:.8}
+#mpTrack{font-size:12px;opacity:.8;min-height:16px}
+@media (max-width:700px){#topbar{padding-right:0;padding-top:44px;min-height:0}#chat,#musicPanel{left:6px;right:6px;width:auto;top:46px}}
 @media (hover:none){#hand .card.ok:hover{transform:none}#hand .card.ok{transform:translateY(-8px)}}
 @media (max-width:700px){:root{--cw:56px;--ch:79px}#right{display:none}#mid{gap:8px}h1{font-size:30px}.row label{min-width:120px}}
 </style>
@@ -143,6 +149,16 @@ h1{margin:0;font-size:40px;letter-spacing:1px}
   <button class="tb" id="tChat" title="Чат">💬</button>
   <button class="tb" id="tLink" title="Ссылка-приглашение">🔗</button>
   <button class="tb" id="tLeave" title="Выйти">🚪</button>
+</div>
+<div id="musicPanel">
+  <div class="chHead"><b>Музыка и звук</b><span></span><button class="sec" id="mpClose">✕</button></div>
+  <label><input type="checkbox" id="mpOn"> Музыка включена</label>
+  <label>🎵 <input type="range" id="mpVol" min="0" max="100" step="1"><span class="val" id="mpVolV"></span></label>
+  <label><input type="checkbox" id="mpSndOn"> Звуки игры</label>
+  <label>🔊 <input type="range" id="mpSnd" min="0" max="100" step="1"><span class="val" id="mpSndV"></span></label>
+  <div class="row" style="margin:0"><button class="sec" id="mpPrev">⏮</button><button class="sec" id="mpPlay">⏯</button><button class="sec" id="mpNext">⏭ Следующий</button></div>
+  <div id="mpTrack"></div>
+  <div class="muted" id="mpIos" style="display:none">На iPhone громкость музыки меняется только кнопками телефона — это ограничение iOS.</div>
 </div>
 <div id="chat">
   <div class="chHead"><b>Чат</b><span id="trackName" class="muted"></span><button class="sec" id="chatClose">✕</button></div>
@@ -550,7 +566,7 @@ function clickCard(c,v){
 }
 
 /* ===================== settings ===================== */
-const CFG=Object.assign({music:true,sound:true},JSON.parse(localStorage.getItem('durak_cfg')||'{}'));
+const CFG=Object.assign({music:true,sound:true,mvol:.35,svol:.6},JSON.parse(localStorage.getItem('durak_cfg')||'{}'));
 function saveCfg(){localStorage.setItem('durak_cfg',JSON.stringify(CFG));renderTools()}
 
 /* ===================== music (CC0 tracks, OpenGameArt) ===================== */
@@ -563,12 +579,12 @@ const TRACKS=[
   {t:'Countdown to Myocardial Infarction — josepharaoh99 (CC0)',u:OGA+'Countdown%20to%20Myocardial%20Infarction.mp3'},
 ];
 const MU={el:new Audio(),list:[],k:0,fails:0,started:false};
-MU.el.volume=.35;MU.el.preload='none';
+MU.el.volume=CFG.mvol;MU.el.preload='none';
 MU.list=shuffle(TRACKS.filter(x=>MU.el.canPlayType(x.u.endsWith('.ogg')?'audio/ogg':'audio/mpeg')));
 MU.el.onended=()=>nextTrack();
 MU.el.onerror=()=>{if(++MU.fails>=MU.list.length){toast('Музыка не загрузилась');return}nextTrack()};
-MU.el.onplaying=()=>{MU.fails=0;const t=$('trackName');if(t)t.textContent='♪ '+MU.list[MU.k].t};
-function nextTrack(){if(!MU.list.length)return;MU.k=(MU.k+1)%MU.list.length;MU.el.src=MU.list[MU.k].u;if(CFG.music)MU.el.play().catch(()=>{})}
+MU.el.onplaying=()=>{MU.fails=0;for(const id of['trackName','mpTrack']){const t=$(id);if(t)t.textContent='♪ '+MU.list[MU.k].t}};
+function nextTrack(d=1){if(!MU.list.length)return;MU.k=(MU.k+d+MU.list.length)%MU.list.length;MU.el.src=MU.list[MU.k].u;if(CFG.music)MU.el.play().catch(()=>{})}
 function musicSync(){
   if(!MU.list.length)return;
   if(CFG.music){if(!MU.el.src)MU.el.src=MU.list[MU.k].u;MU.el.play().catch(()=>{})}else MU.el.pause();
@@ -577,7 +593,7 @@ document.addEventListener('pointerdown',()=>{if(!MU.started){MU.started=true;mus
 
 /* ===================== sound fx (WebAudio) ===================== */
 const AU={ctx:null,out:null};
-function ac(){if(!AU.ctx){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;AU.ctx=new C();AU.out=AU.ctx.createGain();AU.out.gain.value=.45;AU.out.connect(AU.ctx.destination)}if(AU.ctx.state==='suspended')AU.ctx.resume();return AU.ctx}
+function ac(){if(!AU.ctx){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;AU.ctx=new C();AU.out=AU.ctx.createGain();AU.out.gain.value=CFG.svol*.75;AU.out.connect(AU.ctx.destination)}if(AU.ctx.state==='suspended')AU.ctx.resume();return AU.ctx}
 function tone(f,t0,d,type='square',vol=.25,to,vib){const c=AU.ctx,t=c.currentTime+t0,o=c.createOscillator(),g=c.createGain();o.type=type;o.frequency.setValueAtTime(f,t);if(to)o.frequency.exponentialRampToValueAtTime(to,t+d);
   if(vib){const l=c.createOscillator(),lg=c.createGain();l.frequency.value=vib;lg.gain.value=f*.04;l.connect(lg);lg.connect(o.frequency);l.start(t);l.stop(t+d)}
   g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g);g.connect(AU.out);o.start(t);o.stop(t+d+.05)}
@@ -654,9 +670,23 @@ function renderTools(){
 }
 
 /* ===================== wiring ===================== */
-$('tMusic').onclick=()=>{CFG.music=!CFG.music;MU.started=true;saveCfg();musicSync();toast(CFG.music?'Музыка включена':'Музыка выключена')};
+function renderMP(){$('mpOn').checked=CFG.music;$('mpSndOn').checked=CFG.sound;$('mpVol').value=Math.round(CFG.mvol*100);$('mpSnd').value=Math.round(CFG.svol*100);
+  $('mpVolV').textContent=Math.round(CFG.mvol*100)+'%';$('mpSndV').textContent=Math.round(CFG.svol*100)+'%';
+  if(!$('mpTrack').textContent&&MU.list.length)$('mpTrack').textContent='♪ '+MU.list[MU.k].t}
+$('mpIos').style.display=/iPhone|iPad|iPod/.test(navigator.userAgent)?'block':'none';
+$('tMusic').onclick=()=>{const p=$('musicPanel');const on=!p.classList.contains('on');p.classList.toggle('on',on);if(on){CH.open=false;renderTools();renderMP()}};
+$('mpClose').onclick=()=>$('musicPanel').classList.remove('on');
+$('mpOn').onchange=e=>{CFG.music=e.target.checked;MU.started=true;saveCfg();musicSync()};
+$('mpSndOn').onchange=e=>{CFG.sound=e.target.checked;saveCfg();sfx('blip')};
+$('mpVol').oninput=e=>{CFG.mvol=e.target.value/100;MU.el.volume=CFG.mvol;$('mpVolV').textContent=e.target.value+'%';
+  if(CFG.mvol>0&&!CFG.music){CFG.music=true;MU.started=true;musicSync();$('mpOn').checked=true}saveCfg()};
+$('mpSnd').oninput=e=>{CFG.svol=e.target.value/100;$('mpSndV').textContent=e.target.value+'%';if(AU.out)AU.out.gain.value=CFG.svol*.75;saveCfg()};
+$('mpSnd').onchange=()=>sfx('slap');
+$('mpNext').onclick=()=>{CFG.music=true;MU.started=true;saveCfg();nextTrack(1);renderMP()};
+$('mpPrev').onclick=()=>{CFG.music=true;MU.started=true;saveCfg();nextTrack(-1);renderMP()};
+$('mpPlay').onclick=()=>{CFG.music=!CFG.music;MU.started=true;saveCfg();musicSync();renderMP()};
 $('tSound').onclick=()=>{CFG.sound=!CFG.sound;saveCfg();sfx('blip');toast(CFG.sound?'Звуки включены':'Звуки выключены')};
-$('tChat').onclick=()=>{CH.open=!CH.open;if(CH.open){CH.unread=0;setTimeout(()=>$('chatIn').focus(),50)}renderTools()};
+$('tChat').onclick=()=>{CH.open=!CH.open;$('musicPanel').classList.remove('on');if(CH.open){CH.unread=0;setTimeout(()=>$('chatIn').focus(),50)}renderTools()};
 $('chatClose').onclick=()=>{CH.open=false;renderTools()};
 $('chatForm').onsubmit=e=>{e.preventDefault();const t=$('chatIn').value.trim();if(t){sendChat(t,null);$('chatIn').value=''}};
 $('chatReacts').innerHTML=REACT_BTNS.map(([k,e])=>`<button type="button" class="sec" data-r="${k}">${e}</button>`).join('');
