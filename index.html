@@ -91,6 +91,28 @@ h1{margin:0;font-size:40px;letter-spacing:1px}
 #musicPanel .val{width:38px;text-align:right;font-size:13px;opacity:.8}
 #mpTrack{font-size:12px;opacity:.8;min-height:16px}
 @media (max-width:700px){#topbar{padding-right:0;padding-top:44px;min-height:0}#chat,#musicPanel{left:6px;right:6px;width:auto;top:46px}}
+/* polish */
+body{background:radial-gradient(ellipse at 50% 45%,#16774b 0%,#0d5534 45%,#062c1b 100%)}
+#game::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.07;background-image:radial-gradient(#fff 1px,transparent 1px);background-size:4px 4px}
+.opp{display:flex;flex-direction:column;align-items:center;transition:border-color .3s,box-shadow .3s}
+.opp.att{box-shadow:0 0 18px #f2c14e66}.opp.def{box-shadow:0 0 18px #ef535066}
+.av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff;border:2px solid #ffffff88;margin-bottom:2px}
+.opp.att .av,.opp.def .av{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{transform:scale(1.12);box-shadow:0 0 14px #fff8}}
+.pair{transition:transform .2s}
+.pair .card{box-shadow:0 4px 12px #0009}
+#table.drop{outline:3px dashed #ffffff55;outline-offset:6px;border-radius:16px}
+.pair.target.hov .a,.pair.cheatT.hov .a{box-shadow:0 0 0 4px #fff,0 0 24px #4fc3f7}
+.pair.cheatT .a{box-shadow:0 0 0 3px #ff9800,0 0 18px #ff9800;cursor:pointer}
+.card.catchable{box-shadow:0 0 0 3px #e53935,0 0 18px #e53935;cursor:crosshair;animation:wig .5s ease-in-out infinite}
+@keyframes wig{50%{transform:rotate(3deg)}}
+#hand .card{touch-action:none;cursor:grab}
+#hand .card.cheat{box-shadow:0 0 0 2px #ff9800aa}
+#status{display:flex;justify-content:center}
+#status span{background:#00000055;padding:4px 16px;border-radius:20px}
+#status span.me{background:#f2c14e;color:#222;animation:pulse 1.6s ease-in-out infinite}
+.dragG{position:fixed;margin:0!important;z-index:60;pointer-events:none;transform:rotate(-5deg) scale(1.1);box-shadow:0 16px 34px #000b!important}
+.fly{position:fixed;z-index:55;pointer-events:none;margin:0!important}
 @media (hover:none){#hand .card.ok:hover{transform:none}#hand .card.ok{transform:translateY(-8px)}}
 @media (max-width:700px){:root{--cw:56px;--ch:79px}#right{display:none}#mid{gap:8px}h1{font-size:30px}.row label{min-width:120px}}
 </style>
@@ -123,6 +145,7 @@ h1{margin:0;font-size:40px;letter-spacing:1px}
     <div class="row"><label>Командная игра</label><select id="oTeams"><option value="0">Каждый за себя</option><option value="1">Команды (2×2 / 3×3)</option></select></div>
     <div class="row"><label><input type="checkbox" id="oFirst5"> Первый отбой — не больше 5 карт</label></div>
     <div class="row"><label><input type="checkbox" id="oShow"> Перевод показом козыря (переводной)</label></div>
+    <div class="row"><label><input type="checkbox" id="oCheat"> 🃏 Шулер: можно мухлевать (бить и подкидывать любыми картами), соперники могут поймать</label></div>
     <h3 style="margin:14px 0 6px">Игроки <span id="lCount" class="muted"></span></h3>
     <div id="lSeats"></div>
     <div class="row" id="hostBtns">
@@ -156,6 +179,7 @@ h1{margin:0;font-size:40px;letter-spacing:1px}
   <label>🎵 <input type="range" id="mpVol" min="0" max="100" step="1"><span class="val" id="mpVolV"></span></label>
   <label><input type="checkbox" id="mpSndOn"> Звуки игры</label>
   <label>🔊 <input type="range" id="mpSnd" min="0" max="100" step="1"><span class="val" id="mpSndV"></span></label>
+  <label><input type="checkbox" id="mpAnim"> Анимации карт</label>
   <div class="row" style="margin:0"><button class="sec" id="mpPrev">⏮</button><button class="sec" id="mpPlay">⏯</button><button class="sec" id="mpNext">⏭ Следующий</button></div>
   <div id="mpTrack"></div>
   <div class="muted" id="mpIos" style="display:none">На iPhone громкость музыки меняется только кнопками телефона — это ограничение iOS.</div>
@@ -211,7 +235,7 @@ function newGame(seats,opts){
 }
 function startBout(g,att){
   g.attacker=att;g.defender=nextActive(g,att,opp(g,att));
-  g.table=[];g.taking=false;g.passed=[];g.shown=[];
+  g.table=[];g.taking=false;g.passed=[];g.shown=[];g.cheats=[];g.blocked=[];g.noAccuse=[];g.tried=[];
   g.limit=Math.min(cap(g),g.players[g.defender].hand.length);
 }
 function eligible(g,i){
@@ -221,13 +245,21 @@ function eligible(g,i){
   if(g.opts.throwIn==='neighbors'){return i===g.attacker||i===nextActive(g,g.defender,opp(g,g.defender))}
   return true;
 }
-function legalThrows(g,i){
-  if(g.over||!eligible(g,i)||g.table.length>=g.limit)return[];
+function legalThrows(g,i,honest){
+  if(g.over||!eligible(g,i)||g.table.length>=g.limit||(g.blocked&&g.blocked.includes(i)))return[];
   const h=g.players[i].hand;if(!g.table.length)return h.slice();
+  if(g.opts.cheat&&!honest)return h.slice();
   const rs=new Set();g.table.forEach(t=>{rs.add(rank(t.a));if(t.d)rs.add(rank(t.d))});
   return h.filter(c=>rs.has(rank(c)));
 }
-function defendTargets(g,i,c){if(g.over||i!==g.defender||g.taking)return[];const r=[];g.table.forEach((t,k)=>{if(!t.d&&beats(c,t.a,g.trump))r.push(k)});return r}
+function defendTargets(g,i,c,honest){if(g.over||i!==g.defender||g.taking)return[];const r=[];g.table.forEach((t,k)=>{if(!t.d&&(beats(c,t.a,g.trump)||(g.opts.cheat&&!honest)))r.push(k)});return r}
+function catchTargets(g,i){
+  const P=g.players[i];if(!g.opts.cheat||g.over||!P||P.out||(g.noAccuse||[]).includes(i))return[];
+  const r=[];g.table.forEach((t,k)=>{
+    if(t.by!=null&&t.by!==i&&opp(g,i)(t.by))r.push({idx:k,part:'a'});
+    if(t.d&&g.defender!==i&&opp(g,i)(g.defender))r.push({idx:k,part:'d'})});
+  return r;
+}
 function transferInfo(g,i){
   if(g.over||g.opts.mode!=='perevodnoy'||i!==g.defender||g.taking||!g.table.length||g.table.some(t=>t.d))return null;
   const R=rank(g.table[0].a);if(!g.table.every(t=>rank(t.a)===R))return null;
@@ -237,10 +269,10 @@ function transferInfo(g,i){
     show:(g.opts.trumpShow&&nh>=n)?h.filter(c=>rank(c)===R&&suit(c)===g.trump&&!g.shown.includes(c)):[]};
 }
 function legalFor(g,i){
-  const L={throw:legalThrows(g,i),defend:{},transfer:[],show:[],take:false,pass:false};
+  const L={throw:legalThrows(g,i),hThrow:legalThrows(g,i,true),defend:{},hDefend:{},transfer:[],show:[],take:false,pass:false,catch:catchTargets(g,i)};
   if(g.over)return L;
   if(i===g.defender&&!g.taking){
-    for(const c of g.players[i].hand){const t=defendTargets(g,i,c);if(t.length)L.defend[c]=t}
+    for(const c of g.players[i].hand){const t=defendTargets(g,i,c);if(t.length)L.defend[c]=t;const ht=defendTargets(g,i,c,true);if(ht.length)L.hDefend[c]=ht}
     const tr=transferInfo(g,i);if(tr){L.transfer=tr.cards;L.show=tr.show}
     L.take=g.table.some(t=>!t.d);
   }
@@ -251,16 +283,27 @@ function rm(h,c){const k=h.indexOf(c);if(k>=0)h.splice(k,1)}
 function act(g,i,a){
   if(g.over)return false;const P=g.players[i];
   switch(a.type){
-    case'throw':{if(!legalThrows(g,i).includes(a.card))return false;rm(P.hand,a.card);g.table.push({a:a.card,d:null});g.passed=[];
+    case'throw':{if(!legalThrows(g,i).includes(a.card))return false;const ch=!legalThrows(g,i,true).includes(a.card);
+      rm(P.hand,a.card);g.table.push({a:a.card,d:null,by:i});g.passed=[];if(ch)g.cheats.push({c:a.card,rolled:[]});
       log(g,`${P.name}: ${g.taking?'подкидывает':'ходит'} ${cname(a.card)}`);ev(g,'throw',{who:i,card:a.card,trump:suit(a.card)===g.trump});break}
-    case'defend':{if(!defendTargets(g,i,a.card).includes(a.idx))return false;rm(P.hand,a.card);g.table[a.idx].d=a.card;g.passed=[];
+    case'defend':{if(!defendTargets(g,i,a.card).includes(a.idx))return false;if(!defendTargets(g,i,a.card,true).includes(a.idx))g.cheats.push({c:a.card,rolled:[]});rm(P.hand,a.card);g.table[a.idx].d=a.card;g.passed=[];
       log(g,`${P.name} бьёт ${cname(g.table[a.idx].a)} → ${cname(a.card)}`);ev(g,'defend',{who:i,card:a.card,trump:suit(a.card)===g.trump});break}
     case'transfer':case'show':{const tr=transferInfo(g,i);if(!tr)return false;
-      if(a.type==='transfer'){if(!tr.cards.includes(a.card))return false;rm(P.hand,a.card);g.table.push({a:a.card,d:null});log(g,`${P.name} переводит ${cname(a.card)}`)}
+      if(a.type==='transfer'){if(!tr.cards.includes(a.card))return false;rm(P.hand,a.card);g.table.push({a:a.card,d:null,by:i});log(g,`${P.name} переводит ${cname(a.card)}`)}
       else{if(!tr.show.includes(a.card))return false;g.shown.push(a.card);log(g,`${P.name} переводит, показав козырь ${cname(a.card)}`)}
       g.attacker=i;g.defender=tr.nx;g.passed=[];g.limit=Math.min(cap(g),g.players[tr.nx].hand.length);ev(g,'transfer',{who:i,to:tr.nx});break}
     case'take':{if(i!==g.defender||g.taking||!g.table.some(t=>!t.d))return false;g.taking=true;g.passed=[];log(g,`${P.name} берёт`);ev(g,'take',{who:i});break}
     case'pass':{if(!legalFor(g,i).pass)return false;g.passed.push(i);break}
+    case'catch':{const part=a.part==='d'?'d':'a';if(!catchTargets(g,i).some(x=>x.idx===a.idx&&x.part===part))return false;
+      const t=g.table[a.idx],c=t[part],by=part==='a'?t.by:g.defender,C=g.players[by];
+      const k=g.cheats.findIndex(x=>x.c===c);
+      if(k<0){g.noAccuse.push(i);log(g,`${P.name} обвинил зря — ${C.name} играл честно`);ev(g,'falsecatch',{who:i,by});break}
+      g.cheats.splice(k,1);log(g,`🕵️ ${P.name} поймал шулера ${C.name}!`);ev(g,'caught',{who:i,by});
+      if(part==='d'){t.d=null;C.hand.push(c);log(g,`${C.name} в наказание забирает все карты`);g.taking=true;endBout(g,true);return true}
+      g.table.splice(a.idx,1);C.hand.push(c);
+      if(t.d){g.players[g.defender].hand.push(t.d);const j=g.cheats.findIndex(x=>x.c===t.d);if(j>=0)g.cheats.splice(j,1)}
+      if(g.deck.length)C.hand.push(g.deck.shift());
+      g.blocked.push(by);g.passed=[];log(g,`${C.name} забирает карту назад, штрафную из колоды и больше не подкидывает`);break}
     default:return false;
   }
   normalize(g);return true;
@@ -268,7 +311,7 @@ function act(g,i,a){
 function normalize(g){
   if(!g.table.length||g.over)return;
   const el=g.players.map((_,i)=>i).filter(i=>eligible(g,i));
-  for(const e of el)if(!g.passed.includes(e)&&!legalThrows(g,e).length)g.passed.push(e);
+  for(const e of el)if(!g.passed.includes(e)&&!legalThrows(g,e,true).length)g.passed.push(e);
   const all=el.every(e=>g.passed.includes(e));
   const unb=g.table.filter(t=>!t.d).length;
   if(g.taking&&all)endBout(g,true);
@@ -301,6 +344,12 @@ function endBout(g,taken){
 function botAct(g,i){
   const P=g.players[i],tr=g.trump,val=c=>rank(c)+(suit(c)===tr?20:0);
   const big=g.deck.length>6;
+  if(g.opts.cheat&&g.cheats&&g.cheats.length&&!P.out&&!(g.noAccuse||[]).includes(i)){
+    for(const ch of g.cheats){if(ch.rolled.includes(i))continue;
+      let idx=-1,part='a';g.table.forEach((t,k)=>{if(t.a===ch.c){idx=k;part='a'}if(t.d===ch.c){idx=k;part='d'}});
+      if(idx<0)continue;const by=part==='a'?g.table[idx].by:g.defender;if(by===i||!opp(g,i)(by))continue;
+      ch.rolled.push(i);if(Math.random()<.35)return{type:'catch',idx,part}}
+  }
   if(i===g.defender&&!g.taking&&g.table.some(t=>!t.d)){
     const ti=transferInfo(g,i);
     if(ti){
@@ -310,12 +359,16 @@ function botAct(g,i){
     const used=new Set(),plan=[];
     for(let k=0;k<g.table.length;k++){const t=g.table[k];if(t.d)continue;
       const opts=P.hand.filter(c=>!used.has(c)&&beats(c,t.a,tr)).sort((a,b)=>val(a)-val(b));
-      if(!opts.length)return{type:'take'};used.add(opts[0]);plan.push({idx:k,card:opts[0]})}
+      if(!opts.length){
+        if(g.opts.cheat&&Math.random()<.4){const fake=P.hand.filter(c=>!used.has(c)).sort((a,b)=>val(a)-val(b))[0];if(fake)return{type:'defend',idx:k,card:fake}}
+        return{type:'take'}}used.add(opts[0]);plan.push({idx:k,card:opts[0]})}
     const cost=plan.reduce((s,p)=>s+(suit(p.card)===tr?(rank(p.card)>=12?3:1):0),0);
     if(big&&cost>=3&&g.table.length<=2)return{type:'take'};
     return{type:'defend',...plan[0]};
   }
-  const L=legalThrows(g,i);
+  const L=legalThrows(g,i,true);
+  if(g.opts.cheat&&!L.length&&g.table.length&&!g.taking&&g.table.some(t=>!t.d)&&g.tried&&!g.tried.includes(i)&&legalThrows(g,i).length){
+    g.tried.push(i);if(Math.random()<.3){const c=legalThrows(g,i).filter(c=>suit(c)!==tr).sort((a,b)=>val(a)-val(b))[0];if(c)return{type:'throw',card:c}}}
   if(L.length){
     const s=L.slice().sort((a,b)=>val(a)-val(b));
     if(!g.table.length){
@@ -338,7 +391,7 @@ let botTimer=null;
 const ME={name:localStorage.getItem('durak_name')||'',token:localStorage.getItem('durak_token')||(Math.random().toString(36).slice(2)+Date.now().toString(36))};
 localStorage.setItem('durak_token',ME.token);
 const BOTN=['Бот Вася','Бот Маша','Бот Петя','Бот Оля','Бот Гриша','Бот Нина'];
-const defOpts=()=>({mode:'podkidnoy',deck:36,throwIn:'all',teams:0,first5:false,trumpShow:false});
+const defOpts=()=>({mode:'podkidnoy',deck:36,throwIn:'all',teams:0,first5:false,trumpShow:false,cheat:0});
 function saveHost(){if(!H)return;const s={code:H.code,opts:H.opts,seats:H.seats.map(x=>({name:x.name,isBot:x.isBot,token:x.token})),game:H.game,chat:H.chat};localStorage.setItem('durak_host',JSON.stringify(s))}
 function loadHost(){try{return JSON.parse(localStorage.getItem('durak_host'))}catch(e){return null}}
 function newCode(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='';for(let i=0;i<6;i++)s+=A[rnd(A.length)];return s}
@@ -409,7 +462,7 @@ function hostAct(i,a){
   if(act(H.game,i,a)){saveHost();broadcast();scheduleBots()}
 }
 function lobbyOp(a){
-  if(a.op==='opt'){const o={...H.opts};if(['mode','throwIn'].includes(a.k))o[a.k]=String(a.v);if(a.k==='deck')o.deck=+a.v;if(['teams','first5','trumpShow'].includes(a.k))o[a.k]=a.v?1:0;H.opts=o}
+  if(a.op==='opt'){const o={...H.opts};if(['mode','throwIn'].includes(a.k))o[a.k]=String(a.v);if(a.k==='deck')o.deck=+a.v;if(['teams','first5','trumpShow','cheat'].includes(a.k))o[a.k]=a.v?1:0;H.opts=o}
   if(a.op==='bot'&&H.seats.length<MAXP[H.opts.deck]){const used=H.seats.map(s=>s.name);H.seats.push({name:BOTN.find(n=>!used.includes(n))||'Бот',isBot:true,token:'bot'+Math.random()})}
   if(a.op==='kick'&&a.i>0&&a.i<H.seats.length){const s=H.seats[a.i];if(s.conn){try{s.conn.send({t:'err',msg:'Вас убрали из комнаты'});s.conn.close()}catch(e){}}H.seats.splice(a.i,1)}
   if(a.op==='toBot'&&H.game&&a.i>0){H.seats[a.i].isBot=true;H.game.players[a.i].isBot=true;H.seats[a.i].name=H.game.players[a.i].name+' (бот)';H.game.players[a.i].name=H.seats[a.i].name}
@@ -475,7 +528,7 @@ function renderLobby(m){
   const host=S.role==='host';
   if(!m){$('lSeats').innerHTML='';$('hostBtns').style.display='none';$('lWait').textContent='';return}
   for(const[id,k]of[['oMode','mode'],['oDeck','deck'],['oThrow','throwIn'],['oTeams','teams']]){$(id).value=String(m.opts[k]);$(id).disabled=!host}
-  $('oFirst5').checked=!!m.opts.first5;$('oShow').checked=!!m.opts.trumpShow;$('oFirst5').disabled=$('oShow').disabled=!host;
+  $('oFirst5').checked=!!m.opts.first5;$('oShow').checked=!!m.opts.trumpShow;$('oCheat').checked=!!m.opts.cheat;$('oFirst5').disabled=$('oShow').disabled=$('oCheat').disabled=!host;
   $('lCount').textContent=`${m.seats.length}/${MAXP[m.opts.deck]}`;
   $('lSeats').innerHTML=m.seats.map((s,i)=>`<div class="seat"><span><span class="dot ${s.online?'':'off'}"></span>${esc(s.name)}${i===0?' 👑':''}${i===m.you?' (вы)':''}${m.opts.teams?` <span class="tag">команда ${i%2+1}</span>`:''}</span>${host&&i>0?`<button class="sec" data-kick="${i}" style="padding:3px 9px">✕</button>`:''}</div>`).join('');
   $('hostBtns').style.display=host?'flex':'none';
@@ -490,14 +543,16 @@ function roleOf(v,i){
   return'';
 }
 function renderGame(m){
+  const snap=snapshot();
   show('game');const v=m.view,me=v.me,L=v.legal,n=v.players.length;
-  const modeName=(v.opts.mode==='perevodnoy'?'Переводной':'Подкидной')+(v.opts.teams?', командный':'');
+  if(!L.catch||!L.catch.length)S.catchMode=false;
+  const modeName=(v.opts.mode==='perevodnoy'?'Переводной':'Подкидной')+(v.opts.teams?', командный':'')+(v.opts.cheat?', шулерский':'');
   $('gInfo').innerHTML=`${esc(modeName)} · ${v.opts.deck} карт · Комната ${esc(S.code)} · <span class="muted">${esc(S.net)}</span>`;
   // opponents
   const top=$('top');top.innerHTML='';
   for(let k=1;k<n;k++){const i=(me+k)%n,p=v.players[i],seat=m.seats[i];
-    const d=document.createElement('div');d.className='opp'+(i===v.attacker?' att':'')+(i===v.defender?' def':'');
-    d.innerHTML=`<div class="nm">${seat&&!seat.online?'<span class="dot off"></span>':''}${esc(p.name)}${v.opts.teams?(p.team===v.players[me].team?' 🤝':''):''}</div><div class="backs"></div><div>${roleOf(v,i)} <span class="muted">${p.count} карт</span></div>`;
+    const d=document.createElement('div');d.className='opp'+(i===v.attacker?' att':'')+(i===v.defender?' def':'');d.dataset.i=i;
+    d.innerHTML=`<div class="av" style="background:${avColor(p.name)}">${esc((p.name||'?').replace(/^Бот /,'').charAt(0).toUpperCase())}</div><div class="nm">${seat&&!seat.online?'<span class="dot off"></span>':''}${esc(p.name)}${v.opts.teams?(p.team===v.players[me].team?' 🤝':''):''}</div><div class="backs"></div><div>${roleOf(v,i)} <span class="muted">${p.count} карт</span></div>`;
     const b=d.querySelector('.backs');for(let c=0;c<Math.min(p.count,8);c++)b.appendChild(backEl());
     if(S.role==='host'&&seat&&!seat.online&&!p.isBot&&!v.over){const bt=document.createElement('button');bt.className='sec';bt.style.cssText='padding:2px 8px;font-size:11px;margin-top:3px';bt.textContent='заменить ботом';bt.onclick=()=>send({type:'lobby',op:'toBot',i});d.appendChild(bt)}
     top.appendChild(d)}
@@ -508,10 +563,13 @@ function renderGame(m){
   const cn=document.createElement('div');cn.className='cnt';cn.innerHTML=`Колода: ${v.deck}<br>Козырь: ${SYM[v.trump]}<br>Бито: ${v.discard}`;db.appendChild(cn);
   // table
   const tb=$('table');tb.innerHTML='';
-  const selTargets=S.sel&&L.defend[S.sel]?L.defend[S.sel]:[];
-  v.table.forEach((t,k)=>{const p=document.createElement('div');p.className='pair'+(selTargets.includes(k)?' target':'');
-    p.appendChild(cardEl(t.a,'a'));if(t.d)p.appendChild(cardEl(t.d,'d'));
-    if(selTargets.includes(k))p.onclick=()=>{send({type:'defend',card:S.sel,idx:k});S.sel=null};
+  const selTargets=S.sel&&L.defend[S.sel]?L.defend[S.sel]:[],honT=S.sel&&L.hDefend&&L.hDefend[S.sel]?L.hDefend[S.sel]:(v.opts.cheat?[]:selTargets);
+  v.table.forEach((t,k)=>{const p=document.createElement('div');p.dataset.k=k;
+    const isT=selTargets.includes(k);p.className='pair'+(isT?(honT.includes(k)?' target':' cheatT'):'');
+    p.style.transform=`rotate(${tilt(t.a)}deg)`;
+    const ca=cardEl(t.a,'a');p.appendChild(ca);let cd=null;if(t.d){cd=cardEl(t.d,'d');p.appendChild(cd)}
+    if(isT)p.onclick=()=>{send({type:'defend',card:S.sel,idx:k});S.sel=null};
+    if(S.catchMode)for(const x of L.catch)if(x.idx===k){const el=x.part==='a'?ca:cd;if(el){el.classList.add('catchable');el.onclick=ev=>{ev.stopPropagation();S.catchMode=false;send({type:'catch',idx:k,part:x.part})}}}
     tb.appendChild(p)});
   if(!v.table.length){const e=document.createElement('div');e.className='muted';e.textContent=v.over?'':'Стол пуст';tb.appendChild(e)}
   $('right').innerHTML=v.log.map(l=>`<div>${esc(l)}</div>`).join('');
@@ -519,7 +577,9 @@ function renderGame(m){
   const hd=$('hand');hd.innerHTML='';
   const playable=c=>L.throw.includes(c)||!!L.defend[c]||L.transfer.includes(c);
   const anyMove=L.throw.length||Object.keys(L.defend).length||L.transfer.length;
-  v.hand.forEach(c=>{const ok=playable(c);const e=cardEl(c,(ok?'ok':(anyMove?'dim':''))+(S.sel===c?' sel':''));if(ok)e.onclick=()=>clickCard(c,v);hd.appendChild(e)});
+  const honest=c=>!v.opts.cheat||(L.hThrow||[]).includes(c)||!!(L.hDefend||{})[c]||L.transfer.includes(c);
+  v.hand.forEach(c=>{const ok=playable(c);const e=cardEl(c,(ok?'ok':(anyMove?'dim':''))+(ok&&!honest(c)?' cheat':'')+(S.sel===c?' sel':''));
+    if(ok)e.addEventListener('pointerdown',ev=>startDrag(ev,c,v,e));hd.appendChild(e)});
   fitHand();
   // actions
   const ac=$('actions');ac.innerHTML='';
@@ -527,6 +587,7 @@ function renderGame(m){
   if(S.sel&&L.transfer.includes(S.sel))btn('➜ Перевести '+cname(S.sel),()=>{send({type:'transfer',card:S.sel});S.sel=null});
   L.show.forEach(c=>btn('Показать '+cname(c)+' (перевод)',()=>send({type:'show',card:c}),'sec'));
   if(L.take)btn('Беру',()=>send({type:'take'}));
+  if(L.catch&&L.catch.length)btn(S.catchMode?'Отмена':'🕵️ Поймать шулера',()=>{S.catchMode=!S.catchMode;S.sel=null;render();if(S.catchMode)toast('Нажмите на карту, которой, по-вашему, сжульничали')},S.catchMode?'sec':'');
   if(L.pass)btn(v.taking?'Хватит, пусть берёт':(v.table.every(t=>t.d)?'Бито':'Пас'),()=>send({type:'pass'}),'sec');
   // status
   let st='';
@@ -536,7 +597,10 @@ function renderGame(m){
   else if(me===v.attacker&&!v.table.length)st='Ваш ход — выберите карту';
   else if(L.throw.length)st=v.taking?'Можно подкинуть вдогонку':'Можно подкинуть';
   else{const who=v.table.length?(v.table.some(t=>!t.d)&&!v.taking?v.players[v.defender].name:'подкидывающих'):v.players[v.attacker].name;st='Ждём: '+who}
-  $('status').textContent=st;
+  if(S.catchMode)st='Нажмите на подозрительную карту на столе';
+  else if(S.sel&&v.opts.cheat&&me===v.defender)st+=' (оранжевые — шулерский отбой)';
+  const myTurn=!v.over&&((me===v.defender&&!v.taking&&v.table.some(t=>!t.d))||(me===v.attacker&&!v.table.length));
+  $('status').innerHTML=`<span class="${myTurn?'me':''}">${esc(st)}</span>`;
   // overlay
   const ov=$('overlay');
   if(v.over){
@@ -548,6 +612,93 @@ function renderGame(m){
     ov.classList.add('on');
     if(S.role==='host'){$('ovAgain').onclick=()=>send({type:'lobby',op:'start'});$('ovLobby').onclick=()=>send({type:'lobby',op:'lobby'})}
   }else ov.classList.remove('on');
+  animateCards(snap,v,S.prevView);S.prevView=v;
+}
+function tilt(c){let x=0;for(const ch of c)x=(x*31+ch.charCodeAt(0))%997;return (x%7)-3}
+function avColor(s){let x=0;for(const ch of String(s))x=(x*37+ch.charCodeAt(0))%360;return `hsl(${x} 55% 42%)`}
+function snapshot(){
+  const m=new Map();document.querySelectorAll('#hand .card[data-c],#table .card[data-c]').forEach(e=>m.set(e.dataset.c,e.getBoundingClientRect()));
+  if(S.drop){if(Date.now()-S.drop.t>4000||document.querySelector('#table .card[data-c="'+S.drop.c+'"]'))S.drop=null;else m.set(S.drop.c,S.drop.r)}
+  return{m};
+}
+function rectOf(sel){const e=document.querySelector(sel);return e?e.getBoundingClientRect():null}
+function flyGhost(node,from,to,opts={}){
+  if(!from||!to)return;node.classList.add('fly');Object.assign(node.style,{left:from.left+'px',top:from.top+'px',width:from.width+'px',height:from.height+'px'});
+  document.body.appendChild(node);
+  const dx=to.left+to.width/2-(from.left+from.width/2),dy=to.top+to.height/2-(from.top+from.height/2),s=opts.scale||.5;
+  node.animate([{transform:'none',opacity:1},{transform:`translate(${dx}px,${dy}px) scale(${s}) rotate(${opts.rot||0}deg)`,opacity:opts.fade?0:.9}],
+    {duration:opts.dur||520,delay:opts.delay||0,easing:'cubic-bezier(.4,.1,.2,1)',fill:'both'}).onfinish=()=>node.remove();
+}
+function animateCards(snap,v,pv){
+  if(!CFG.anim||S.dragging)return;
+  const fresh=!pv||pv.gid!==v.gid;
+  const deckR=rectOf('#deckbox'),handR=rectOf('#hand'),oppR=i=>rectOf(`.opp[data-i="${i}"]`);
+  const newEv=pv&&!fresh?v.evs.filter(e=>!pv.evs.some(x=>x.id===e.id)):[];
+  const lastBoutEv=[...newEv].reverse().find(e=>e.type==='taken'||e.type==='beat');
+  let k=0;
+  document.querySelectorAll('#hand .card[data-c],#table .card[data-c]').forEach(e=>{
+    const c=e.dataset.c,to=e.getBoundingClientRect();let from=fresh?null:snap.m.get(c),delay=0;
+    if(!from){
+      if(e.closest('#table')){const t=v.table.find(t=>t.a===c||t.d===c);const who=t&&t.a===c?t.by:v.defender;from=who===v.me?handR:(oppR(who)||deckR)}
+      else{from=deckR;delay=(k++)*(fresh?90:70)}
+    }
+    if(!from)return;
+    const dx=from.left+from.width/2-(to.left+to.width/2),dy=from.top+from.height/2-(to.top+to.height/2);
+    if(Math.abs(dx)<2&&Math.abs(dy)<2)return;
+    const known=snap.m.has(c);
+    e.animate([{transform:`translate(${dx}px,${dy}px) scale(${known?1:.6})`,opacity:known?1:.4},{transform:'none',opacity:1}],{duration:430,delay,easing:'cubic-bezier(.2,.8,.2,1)',fill:'backwards'});
+  });
+  if(fresh)return;
+  const tableNow=new Set(v.table.flatMap(t=>[t.a,t.d]).filter(Boolean)),inHand=new Set(v.hand);
+  let gi=0;
+  for(const t of pv.table)for(const c of [t.a,t.d]){
+    if(!c||tableNow.has(c)||inHand.has(c))continue;const from=snap.m.get(c);if(!from)continue;
+    let to,opt;
+    if(lastBoutEv&&lastBoutEv.type==='taken'){to=oppR(pv.defender);opt={scale:.35}}
+    else if(lastBoutEv&&lastBoutEv.type==='beat'){to={left:innerWidth+60,top:from.top-80,width:from.width,height:from.height};opt={scale:.8,rot:120+rnd(60),dur:650}}
+    else{const caught=newEv.find(e=>e.type==='caught');to=caught?oppR(caught.by):deckR;opt={scale:.4}}
+    if(!to)continue;opt.delay=(gi++)*45;flyGhost(cardEl(c),from,to,opt);
+  }
+  if(deckR)v.players.forEach((p,i)=>{if(i===v.me)return;const was=pv.players[i]?pv.players[i].count:p.count;
+    const fromTable=lastBoutEv&&lastBoutEv.type==='taken'&&i===pv.defender?pv.table.reduce((s,t)=>s+(t.d?2:1),0):0;
+    const add=Math.min(6,p.count-was-fromTable);const to=oppR(i);
+    for(let j=0;j<add;j++){const b=document.createElement('div');b.className='cb';flyGhost(b,{left:deckR.left,top:deckR.top,width:deckR.width/2.1,height:deckR.height},to,{scale:.4,delay:200+j*80,dur:450})}});
+}
+function startDrag(ev,c,v,el){
+  if(ev.button>0)return;ev.preventDefault();
+  const sx=ev.clientX,sy=ev.clientY;let drag=null,hov=null;
+  const L=v.legal;
+  const targetAt=(x,y)=>{const e=document.elementFromPoint(x,y);if(!e)return null;const p=e.closest('.pair');if(p)return{k:+p.dataset.k,p};if(e.closest('#mid'))return{k:null};return null};
+  const move=e=>{
+    const dx=e.clientX-sx,dy=e.clientY-sy;
+    if(!drag){if(Math.hypot(dx,dy)<8)return;const r=el.getBoundingClientRect();
+      const g=el.cloneNode(true);g.classList.add('dragG');g.classList.remove('sel','ok');Object.assign(g.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
+      document.body.appendChild(g);drag={g,ox:sx-r.left,oy:sy-r.top};el.style.visibility='hidden';S.dragging=c;
+      $('table').classList.add('drop');
+      const tg=L.defend[c]||[],ht=(L.hDefend||{})[c]||[];document.querySelectorAll('#table .pair').forEach(p=>{const k=+p.dataset.k;if(tg.includes(k))p.classList.add(ht.includes(k)||!v.opts.cheat?'target':'cheatT')})}
+    drag.g.style.left=(e.clientX-drag.ox)+'px';drag.g.style.top=(e.clientY-drag.oy)+'px';
+    const t=targetAt(e.clientX,e.clientY);const p=t&&t.p;if(hov!==p){hov&&hov.classList.remove('hov');p&&p.classList.add('hov');hov=p}
+  };
+  const up=e=>{
+    removeEventListener('pointermove',move);removeEventListener('pointerup',up);removeEventListener('pointercancel',up);
+    if(!drag){clickCard(c,v);return}
+    S.dragging=null;$('table').classList.remove('drop');hov&&hov.classList.remove('hov');
+    const t=e.type==='pointercancel'?null:targetAt(e.clientX,e.clientY);
+    let a=null;
+    if(t){const tg=L.defend[c]||[],ht=(L.hDefend||{})[c]||[];
+      if(t.k!=null&&tg.includes(t.k))a={type:'defend',card:c,idx:t.k};
+      else if(L.throw.includes(c))a={type:'throw',card:c};
+      else if(L.transfer.includes(c))a={type:'transfer',card:c};
+      else if(ht.length===1)a={type:'defend',card:c,idx:ht[0]};
+      else if(tg.length===1)a={type:'defend',card:c,idx:tg[0]};
+      else if(tg.length)toast('Перетащите карту на ту, которую бьёте')}
+    const gr=drag.g.getBoundingClientRect();
+    if(a){S.drop={c,r:gr,t:Date.now()};drag.g.remove();S.sel=null;send(a);
+      setTimeout(()=>{if(document.body.contains(el))el.style.visibility=''},1500)}
+    else{const r=el.getBoundingClientRect();drag.g.animate([{transform:'rotate(-5deg) scale(1.1)'},{transform:`translate(${r.left-gr.left}px,${r.top-gr.top}px)`}],{duration:250,easing:'ease-out'}).onfinish=()=>{drag.g.remove();el.style.visibility=''};
+      document.querySelectorAll('#table .pair').forEach(p=>p.classList.remove('target','cheatT'))}
+  };
+  addEventListener('pointermove',move);addEventListener('pointerup',up);addEventListener('pointercancel',up);
 }
 function fitHand(){
   const hd=$('hand'),cs=hd.children,n=cs.length;if(!n)return;
@@ -559,14 +710,15 @@ window.addEventListener('resize',fitHand);
 function clickCard(c,v){
   const L=v.legal;
   if(L.throw.includes(c)){send({type:'throw',card:c});return}
-  const t=L.defend[c]||[],tr=L.transfer.includes(c);
-  if(t.length===1&&!tr){send({type:'defend',card:c,idx:t[0]});return}
+  const t=L.defend[c]||[],ht=(L.hDefend||{})[c]||[],tr=L.transfer.includes(c);
+  if(!tr&&t.length===1){send({type:'defend',card:c,idx:t[0]});return}
+  if(!tr&&v.opts.cheat&&ht.length===1&&t.length>1&&!S.sel){S.sel=c;render();return}
   if(!t.length&&tr){send({type:'transfer',card:c});return}
   S.sel=S.sel===c?null:c;render();
 }
 
 /* ===================== settings ===================== */
-const CFG=Object.assign({music:true,sound:true,mvol:.35,svol:.6},JSON.parse(localStorage.getItem('durak_cfg')||'{}'));
+const CFG=Object.assign({music:true,sound:true,mvol:.35,svol:.6,anim:true},JSON.parse(localStorage.getItem('durak_cfg')||'{}'));
 function saveCfg(){localStorage.setItem('durak_cfg',JSON.stringify(CFG));renderTools()}
 
 /* ===================== music (CC0 tracks, OpenGameArt) ===================== */
@@ -620,7 +772,10 @@ const R=a=>a[rnd(a.length)];
 const REACT_FX={chicken(){sfx('cluck')},boom(){sfx('boom')},clown(){sfx('laugh')},horn(){sfx('horn')},duck(){sfx('quack')},boing(){sfx('boing')}};
 const REACT_BTNS=[['chicken','🐔'],['boom','💥'],['clown','🤡'],['horn','🎺'],['duck','🦆'],['boing','🌀']];
 function playEvent(e){
-  const S2={start:'fanfare',throw:'slap',defend:'slap',transfer:'slide',take:'trombone',taken:'cluck',beat:'whoosh',out:'fanfare'};
+  const v0=S.msg&&S.msg.view,nm=k=>v0&&v0.players[k]?v0.players[k].name:'';
+  if(e.type==='caught')toast('🕵️ '+nm(e.who)+' поймал шулера '+nm(e.by)+'!');
+  if(e.type==='falsecatch')toast(nm(e.who)+' обвинил зря — '+nm(e.by)+' играл честно');
+  const S2={caught:'boom',falsecatch:'laugh',start:'fanfare',throw:'slap',defend:'slap',transfer:'slide',take:'trombone',taken:'cluck',beat:'whoosh',out:'fanfare'};
   if(e.type==='over'){const v=S.msg&&S.msg.view;if(!v)return;const r=v.result||{},me=v.me;
     const lost=r.draw?false:v.opts.teams?r.loserTeam===v.players[me].team:r.loser===me;sfx(lost?'trombone':'fanfare');return}
   if(S2[e.type])sfx(S2[e.type]);
@@ -670,11 +825,12 @@ function renderTools(){
 }
 
 /* ===================== wiring ===================== */
-function renderMP(){$('mpOn').checked=CFG.music;$('mpSndOn').checked=CFG.sound;$('mpVol').value=Math.round(CFG.mvol*100);$('mpSnd').value=Math.round(CFG.svol*100);
+function renderMP(){$('mpAnim').checked=CFG.anim;$('mpOn').checked=CFG.music;$('mpSndOn').checked=CFG.sound;$('mpVol').value=Math.round(CFG.mvol*100);$('mpSnd').value=Math.round(CFG.svol*100);
   $('mpVolV').textContent=Math.round(CFG.mvol*100)+'%';$('mpSndV').textContent=Math.round(CFG.svol*100)+'%';
   if(!$('mpTrack').textContent&&MU.list.length)$('mpTrack').textContent='♪ '+MU.list[MU.k].t}
 $('mpIos').style.display=/iPhone|iPad|iPod/.test(navigator.userAgent)?'block':'none';
 $('tMusic').onclick=()=>{const p=$('musicPanel');const on=!p.classList.contains('on');p.classList.toggle('on',on);if(on){CH.open=false;renderTools();renderMP()}};
+$('mpAnim').onchange=e=>{CFG.anim=e.target.checked;saveCfg()};
 $('mpClose').onclick=()=>$('musicPanel').classList.remove('on');
 $('mpOn').onchange=e=>{CFG.music=e.target.checked;MU.started=true;saveCfg();musicSync()};
 $('mpSndOn').onchange=e=>{CFG.sound=e.target.checked;saveCfg();sfx('blip')};
@@ -714,6 +870,7 @@ $('lSeats').onclick=e=>{const k=e.target.dataset.kick;if(k)send({type:'lobby',op
 for(const[id,k]of[['oMode','mode'],['oDeck','deck'],['oThrow','throwIn'],['oTeams','teams']])$(id).onchange=e=>send({type:'lobby',op:'opt',k,v:k==='teams'?+e.target.value:e.target.value});
 $('oFirst5').onchange=e=>send({type:'lobby',op:'opt',k:'first5',v:e.target.checked});
 $('oShow').onchange=e=>send({type:'lobby',op:'opt',k:'trumpShow',v:e.target.checked});
+$('oCheat').onchange=e=>send({type:'lobby',op:'opt',k:'cheat',v:e.target.checked});
 window.addEventListener('hashchange',()=>{if(!S.role)initMenu()});
 initMenu();
 </script>
