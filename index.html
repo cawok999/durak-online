@@ -70,6 +70,16 @@ h1{margin:0;font-size:40px;letter-spacing:1px}
 #topbar{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:2px 6px;gap:8px}
 #overlay{position:absolute;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:10}
 #overlay.on{display:flex}
+#overlay{pointer-events:none;background:#0007}#overlay .panel{pointer-events:auto}
+#game.over #top{position:relative;z-index:11}
+.opp.aim{cursor:crosshair;outline:2px dashed #ff5252;outline-offset:2px}
+.opp.aim:hover{outline-color:#fff;transform:scale(1.04)}
+#fx{position:fixed;inset:0;pointer-events:none;z-index:45;overflow:hidden}
+.fxe{position:fixed;pointer-events:none;line-height:1;will-change:transform}
+.runner{position:fixed;pointer-events:auto;cursor:pointer;z-index:46;will-change:transform}
+.runner img{height:84px;display:block;animation:bob .28s ease-in-out infinite alternate;user-select:none;-webkit-user-drag:none}
+@keyframes bob{to{transform:translateY(-9px) rotate(2deg)}}
+#gunBtn.on{background:#ff5252;color:#fff}
 #toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:#000c;padding:8px 16px;border-radius:10px;display:none;z-index:20}
 #topbar{padding-right:270px;min-height:40px}
 #tools{position:fixed;top:5px;right:6px;display:flex;gap:5px;z-index:25}
@@ -147,6 +157,11 @@ body{background:radial-gradient(ellipse at 50% 45%,#16774b 0%,#0d5534 45%,#062c1
     <div class="row"><label><input type="checkbox" id="oFirst5"> Первый отбой — не больше 5 карт</label></div>
     <div class="row"><label><input type="checkbox" id="oShow"> Перевод показом козыря (переводной)</label></div>
     <div class="row"><label><input type="checkbox" id="oCheat"> 🃏 Шулер: можно мухлевать (бить и подкидывать любыми картами), соперники могут поймать</label></div>
+    <h3 style="margin:14px 0 6px">Приколы</h3>
+    <div class="row"><label><input type="checkbox" id="oTomato"> 🍅 Помидоры: после партии можно кидаться в соперников</label></div>
+    <div class="row"><label><input type="checkbox" id="oPistol"> 🔫 Пистолет: дурак получает его в следующей партии (3 выстрела)</label></div>
+    <div class="row"><label><input type="checkbox" id="oRunner"> 🐱 Иногда по столу пробегает котик</label></div>
+    <div class="row"><label>Своя картинка бегуна</label><input id="oRunnerImg" maxlength="400" placeholder="https://…/картинка.png (необязательно)" style="flex:1;min-width:0"></div>
     <h3 style="margin:14px 0 6px">Игроки <span id="lCount" class="muted"></span></h3>
     <div id="lSeats"></div>
     <div class="row" id="hostBtns">
@@ -167,6 +182,7 @@ body{background:radial-gradient(ellipse at 50% 45%,#16774b 0%,#0d5534 45%,#062c1
   <div id="overlay"><div class="panel" style="text-align:center" id="ovBody"></div></div>
 </div>
 <div id="toast"></div>
+<div id="fx"></div>
 <div id="tools">
   <button class="tb" id="tMusic" title="Музыка">🎵</button>
   <button class="tb" id="tSound" title="Звуки">🔊</button>
@@ -181,6 +197,7 @@ body{background:radial-gradient(ellipse at 50% 45%,#16774b 0%,#0d5534 45%,#062c1
   <label><input type="checkbox" id="mpSndOn"> Звуки игры</label>
   <label>🔊 <input type="range" id="mpSnd" min="0" max="100" step="1"><span class="val" id="mpSndV"></span></label>
   <label><input type="checkbox" id="mpAnim"> Анимации карт</label>
+  <label><input type="checkbox" id="mpFun"> Показывать приколы (помидоры, пистолет, котик)</label>
   <div class="row" style="margin:0"><button class="sec" id="mpPrev">⏮</button><button class="sec" id="mpPlay">⏯</button><button class="sec" id="mpNext">⏭ Следующий</button></div>
   <div id="mpTrack"></div>
   <div class="muted" id="mpIos" style="display:none">На iPhone громкость музыки меняется только кнопками телефона — это ограничение iOS.</div>
@@ -510,7 +527,7 @@ let botTimer=null;
 const ME={name:localStorage.getItem('durak_name')||'',token:localStorage.getItem('durak_token')||(Math.random().toString(36).slice(2)+Date.now().toString(36))};
 localStorage.setItem('durak_token',ME.token);
 const BOTN=['Бот Вася','Бот Маша','Бот Петя','Бот Оля','Бот Гриша','Бот Нина'];
-const defOpts=()=>({mode:'podkidnoy',deck:36,throwIn:'all',teams:0,first5:false,trumpShow:false,cheat:0,bots:'smart'});
+const defOpts=()=>({mode:'podkidnoy',deck:36,throwIn:'all',teams:0,first5:false,trumpShow:false,cheat:0,bots:'smart',tomatoes:1,pistol:1,runner:1,runnerImg:''});
 function saveHost(){if(!H)return;const s={code:H.code,opts:H.opts,seats:H.seats.map(x=>({name:x.name,isBot:x.isBot,token:x.token})),game:H.game,chat:H.chat};localStorage.setItem('durak_host',JSON.stringify(s))}
 function loadHost(){try{return JSON.parse(localStorage.getItem('durak_host'))}catch(e){return null}}
 function newCode(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='';for(let i=0;i<6;i++)s+=A[rnd(A.length)];return s}
@@ -521,7 +538,8 @@ function startHost(saved){
   H.chat=(saved&&saved.chat)||[];
   H.seats[0].name=ME.name;if(H.game)H.game.players[0].name=ME.name;
   S.role='host';S.code=H.code;location.hash=H.code;
-  saveHost();openPeer();broadcast();scheduleBots();
+  H.fxNonce=Math.random().toString(36).slice(2);H.fx=[];
+  saveHost();openPeer();broadcast();scheduleBots();runnerLoop();
 }
 function openPeer(){
   if(typeof Peer==='undefined'){S.net='Сетевая библиотека не загрузилась — доступна только игра с ботами';render();return}
@@ -554,6 +572,7 @@ function hostMsg(c,m){
   }
   if(m.t==='act'){const k=H.seats.findIndex(s=>s.conn===c);if(k>=0)hostAct(k,m.a)}
   if(m.t==='chat'){const k=H.seats.findIndex(s=>s.conn===c);if(k>=0)hostChat(k,m)}
+  if(m.t==='fx'){const k=H.seats.findIndex(s=>s.conn===c);if(k>=0)hostFx(k,m)}
 }
 const REACTS=['chicken','boom','clown','horn','duck','boing'];
 function hostChat(k,m){
@@ -570,9 +589,9 @@ function viewFor(g,i){
   return{me:i,players:g.players.map((q,k)=>({name:q.name,count:q.hand.length,out:q.out,place:q.place,team:q.team,isBot:q.isBot})),
     hand:sortHand(p.hand,g.trump),deck:g.deck.length,trump:g.trump,trumpCard:g.trumpCard,table:g.table,attacker:g.attacker,defender:g.defender,
     taking:g.taking,passed:g.passed,discard:g.discard,log:g.log.slice(-14),over:g.over,result:g.result,opts:g.opts,legal:legalFor(g,i),
-    eligible:g.players.map((_,k)=>eligible(g,k)),gid:g.gid||'old',evs:g.evs||[],known:mem(g).known.map((k,j)=>j===i?[]:k),gone:g.gone,limit:g.limit};
+    eligible:g.players.map((_,k)=>eligible(g,k)),gid:g.gid||'old',evs:g.evs||[],known:mem(g).known.map((k,j)=>j===i?[]:k),gone:g.gone,limit:g.limit,ammo:g.ammo||{}};
 }
-function msgFor(i){return{t:'state',code:H.code,opts:H.opts,seats:seatInfo(),you:i,view:H.game?viewFor(H.game,i):null,chat:H.chat}}
+function msgFor(i){return{t:'state',code:H.code,opts:H.opts,seats:seatInfo(),you:i,view:H.game?viewFor(H.game,i):null,chat:H.chat,fx:{n:H.fxNonce,list:H.fx||[]}}}
 function broadcast(){
   H.seats.forEach((s,i)=>{if(s.conn&&s.conn.open)try{s.conn.send(msgFor(i))}catch(e){}});
   onState(msgFor(0));
@@ -581,10 +600,11 @@ function hostAct(i,a){
   if(!a||typeof a!=='object')return;
   if(a.type==='lobby'){if(i!==0||H.game&&!H.game.over&&a.op!=='toBot')return;lobbyOp(a);saveHost();broadcast();scheduleBots();return}
   if(!H.game)return;
-  if(act(H.game,i,a)){saveHost();broadcast();scheduleBots()}
+  if(act(H.game,i,a)){saveHost();broadcast();hostAfter();scheduleBots()}
 }
 function lobbyOp(a){
-  if(a.op==='opt'){const o={...H.opts};if(['mode','throwIn'].includes(a.k))o[a.k]=String(a.v);if(a.k==='bots')o.bots=a.v==='easy'?'easy':'smart';if(a.k==='deck')o.deck=+a.v;if(['teams','first5','trumpShow','cheat'].includes(a.k))o[a.k]=a.v?1:0;H.opts=o}
+  if(a.op==='opt'){const o={...H.opts};if(['mode','throwIn'].includes(a.k))o[a.k]=String(a.v);if(a.k==='bots')o.bots=a.v==='easy'?'easy':'smart';if(a.k==='deck')o.deck=+a.v;if(['teams','first5','trumpShow','cheat','tomatoes','pistol','runner'].includes(a.k))o[a.k]=a.v?1:0;
+    if(a.k==='runnerImg'){const u=String(a.v||'').trim();o.runnerImg=/^https:\/\/[^\s"'<>]+$/.test(u)&&u.length<=400?u:''}H.opts=o}
   if(a.op==='bot'&&H.seats.length<MAXP[H.opts.deck]){const used=H.seats.map(s=>s.name);H.seats.push({name:BOTN.find(n=>!used.includes(n))||'Бот',isBot:true,token:'bot'+Math.random()})}
   if(a.op==='kick'&&a.i>0&&a.i<H.seats.length){const s=H.seats[a.i];if(s.conn){try{s.conn.send({t:'err',msg:'Вас убрали из комнаты'});s.conn.close()}catch(e){}}H.seats.splice(a.i,1)}
   if(a.op==='toBot'&&H.game&&a.i>0){H.seats[a.i].isBot=true;H.game.players[a.i].isBot=true;H.seats[a.i].name=H.game.players[a.i].name+' (бот)';H.game.players[a.i].name=H.seats[a.i].name}
@@ -592,16 +612,39 @@ function lobbyOp(a){
     const n=H.seats.length;if(n<2)return toast('Нужно минимум 2 игрока');
     if(n>MAXP[H.opts.deck])return toast('Слишком много игроков для этой колоды');
     if(H.opts.teams&&n!==4&&n!==6)return toast('Командная игра — 4 или 6 игроков');
-    H.game=newGame(H.seats,H.opts);
+    const lt=H.game&&H.game.over?loserTokens(H.game):(H.lastLosers||[]);
+    H.game=newGame(H.seats,H.opts);H.lastLosers=[];
+    if(H.opts.pistol&&lt.length){H.game.ammo={};H.seats.forEach((s,i)=>{if(lt.includes(s.token))H.game.ammo[i]=3})}
   }
-  if(a.op==='lobby'){H.game=null}
+  if(a.op==='lobby'){if(H.game&&H.game.over)H.lastLosers=loserTokens(H.game);H.game=null}
 }
+function losersIdx(g){const r=g.result||{};if(r.loser!=null)return[r.loser];if(r.loserTeam!=null)return g.players.map((p,i)=>i).filter(i=>g.players[i].team===r.loserTeam);return[]}
+function loserTokens(g){return losersIdx(g).map(i=>H.seats[i]&&H.seats[i].token).filter(Boolean)}
+function hostAfter(){
+  const g=H.game;if(!g||!g.over||g._overDone)return;g._overDone=1;H.lastLosers=loserTokens(g);
+  if(!g.opts.tomatoes)return;const L=losersIdx(g);
+  g.players.forEach((p,i)=>{if(!p.isBot)return;const tg=L.includes(i)?g.players.map((_,j)=>j).filter(j=>j!==i&&!L.includes(j)):L;if(!tg.length)return;
+    const n=1+rnd(3);for(let j=0;j<n;j++)setTimeout(()=>hostFx(i,{kind:'tomato',target:R(tg)}),1200+j*800+rnd(1500))});
+}
+function pushFx(o){H.fxSeq=(H.fxSeq||0)+1;(H.fx=H.fx||[]).push({id:H.fxSeq,...o});if(H.fx.length>15)H.fx.shift();broadcast()}
+function hostFx(k,m){
+  const g=H&&H.game;if(!g||!m)return;const s=H.seats[k],now=Date.now();if(!s||s._lf&&now-s._lf<350)return;
+  const t=+m.target;if(!(t>=0&&t<g.players.length)||t===k)return;
+  if(m.kind==='tomato'){if(!g.over||!g.opts.tomatoes)return;s._lf=now}
+  else if(m.kind==='shot'){if(g.over||!g.opts.pistol||!g.ammo||!(g.ammo[k]>0))return;s._lf=now;g.ammo[k]--;saveHost()}
+  else return;
+  pushFx({kind:m.kind,from:k,target:t});
+}
+function runnerLoop(){clearTimeout(runnerLoop.t);runnerLoop.t=setTimeout(()=>{const g=H&&H.game;
+  if(g&&!g.over&&g.opts.runner)pushFx({kind:'runner',y:Math.random(),dir:Math.random()<.5?1:-1,speed:5500+rnd(3500)});runnerLoop()},18000+rnd(30000))}
 function scheduleBots(){
   clearTimeout(botTimer);const g=H&&H.game;if(!g||g.over)return;
   botTimer=setTimeout(()=>{
     const n=g.players.length,order=[g.defender,g.attacker];for(let k=0;k<n;k++)if(!order.includes(k))order.push(k);
     for(const i of order){if(i<0||!g.players[i].isBot||g.players[i].out)continue;
-      const a=g.opts.bots==='easy'?botAct(g,i):smartBot(g,i);if(a&&act(g,i,a)){saveHost();broadcast();scheduleBots();return}}
+      const a=g.opts.bots==='easy'?botAct(g,i):smartBot(g,i);if(a&&act(g,i,a)){saveHost();broadcast();hostAfter();
+        if(g.ammo&&g.ammo[i]>0&&!g.over&&Math.random()<.07){const tg=g.players.map((_,j)=>j).filter(j=>j!==i);setTimeout(()=>hostFx(i,{kind:'shot',target:R(tg)}),500)}
+        scheduleBots();return}}
   },g.opts.bots==='easy'?750:600);
 }
 
@@ -634,7 +677,7 @@ function send(a){if(S.role==='host')hostAct(0,a);else if(conn&&conn.open)conn.se
 
 /* ===================== UI ===================== */
 const S={role:null,code:null,msg:null,net:'',sel:null};
-function onState(m){S.msg=m;if(S.sel&&!(m.view&&m.view.hand.includes(S.sel)))S.sel=null;render();try{processIncoming(m)}catch(e){console.error(e)}}
+function onState(m){S.msg=m;if(S.sel&&!(m.view&&m.view.hand.includes(S.sel)))S.sel=null;render();try{processIncoming(m)}catch(e){console.error(e)}try{processFx(m)}catch(e){console.error(e)}}
 function show(id){for(const s of['menu','lobby','game'])$(s).classList.toggle('on',s===id)}
 function inviteLink(){return location.origin+location.pathname+'#'+S.code}
 function copyLink(){const l=inviteLink();(navigator.clipboard?navigator.clipboard.writeText(l):Promise.reject()).then(()=>toast('Ссылка скопирована — отправьте другу'),()=>{prompt('Скопируйте ссылку:',l)})}
@@ -661,6 +704,8 @@ function renderLobby(m){
   if(!m){$('lSeats').innerHTML='';$('hostBtns').style.display='none';$('lWait').textContent='';return}
   for(const[id,k]of[['oMode','mode'],['oDeck','deck'],['oThrow','throwIn'],['oTeams','teams']]){$(id).value=String(m.opts[k]);$(id).disabled=!host}
   $('oBots').value=m.opts.bots==='easy'?'easy':'smart';$('oBots').disabled=!host;
+  for(const[id,k]of[['oTomato','tomatoes'],['oPistol','pistol'],['oRunner','runner']]){$(id).checked=!!m.opts[k];$(id).disabled=!host}
+  if(document.activeElement!==$('oRunnerImg'))$('oRunnerImg').value=m.opts.runnerImg||'';$('oRunnerImg').disabled=!host;
   $('oFirst5').checked=!!m.opts.first5;$('oShow').checked=!!m.opts.trumpShow;$('oCheat').checked=!!m.opts.cheat;$('oFirst5').disabled=$('oShow').disabled=$('oCheat').disabled=!host;
   $('lCount').textContent=`${m.seats.length}/${MAXP[m.opts.deck]}`;
   $('lSeats').innerHTML=m.seats.map((s,i)=>`<div class="seat"><span><span class="dot ${s.online?'':'off'}"></span>${esc(s.name)}${i===0?' 👑':''}${i===m.you?' (вы)':''}${m.opts.teams?` <span class="tag">команда ${i%2+1}</span>`:''}</span>${host&&i>0?`<button class="sec" data-kick="${i}" style="padding:3px 9px">✕</button>`:''}</div>`).join('');
@@ -678,6 +723,9 @@ function roleOf(v,i){
 function renderGame(m){
   const snap=snapshot();
   show('game');const v=m.view,me=v.me,L=v.legal,n=v.players.length;
+  $('game').classList.toggle('over',!!v.over);
+  const ammo=(v.ammo||{})[me]||0;if(!ammo||v.over)S.gunMode=false;
+  const canTomato=v.over&&v.opts.tomatoes;
   if(!L.catch||!L.catch.length)S.catchMode=false;
   const modeName=(v.opts.mode==='perevodnoy'?'Переводной':'Подкидной')+(v.opts.teams?', командный':'')+(v.opts.cheat?', шулерский':'');
   $('gInfo').innerHTML=`${esc(modeName)} · ${v.opts.deck} карт · Комната ${esc(S.code)} · <span class="muted">${esc(S.net)}</span>`;
@@ -688,6 +736,7 @@ function renderGame(m){
     d.innerHTML=`<div class="av" style="background:${avColor(p.name)}">${esc((p.name||'?').replace(/^Бот /,'').charAt(0).toUpperCase())}</div><div class="nm">${seat&&!seat.online?'<span class="dot off"></span>':''}${esc(p.name)}${v.opts.teams?(p.team===v.players[me].team?' 🤝':''):''}</div><div class="backs"></div><div>${roleOf(v,i)} <span class="muted">${p.count} карт</span></div>`;
     const b=d.querySelector('.backs');for(let c=0;c<Math.min(p.count,8);c++)b.appendChild(backEl());
     if(S.role==='host'&&seat&&!seat.online&&!p.isBot&&!v.over){const bt=document.createElement('button');bt.className='sec';bt.style.cssText='padding:2px 8px;font-size:11px;margin-top:3px';bt.textContent='заменить ботом';bt.onclick=()=>send({type:'lobby',op:'toBot',i});d.appendChild(bt)}
+    if(canTomato||S.gunMode){d.classList.add('aim');d.title=S.gunMode?'Выстрелить':'Кинуть помидор';d.onclick=()=>{if(S.gunMode){S.gunMode=false;sendFx('shot',i);render()}else sendFx('tomato',i)}}
     top.appendChild(d)}
   // deck
   const db=$('deckbox');db.innerHTML='';
@@ -719,6 +768,7 @@ function renderGame(m){
   const btn=(t,f,cls='')=>{const b=document.createElement('button');b.textContent=t;b.className=cls;b.onclick=f;ac.appendChild(b)};
   if(S.sel&&L.transfer.includes(S.sel))btn('➜ Перевести '+cname(S.sel),()=>{send({type:'transfer',card:S.sel});S.sel=null});
   L.show.forEach(c=>btn('Показать '+cname(c)+' (перевод)',()=>send({type:'show',card:c}),'sec'));
+  if(ammo&&!v.over){btn((S.gunMode?'Отмена ':'🔫 Пистолет ')+'×'+ammo,()=>{S.gunMode=!S.gunMode;render();if(S.gunMode)toast('Нажмите на соперника, чтобы выстрелить')},S.gunMode?'sec':'');ac.lastChild.id='gunBtn'}
   if(L.take)btn('Беру',()=>send({type:'take'}));
   if(L.catch&&L.catch.length)btn(S.catchMode?'Отмена':'🕵️ Поймать шулера',()=>{S.catchMode=!S.catchMode;S.sel=null;render();if(S.catchMode)toast('Нажмите на карту, которой, по-вашему, сжульничали')},S.catchMode?'sec':'');
   if(L.pass)btn(v.taking?'Хватит, пусть берёт':(v.table.every(t=>t.d)?'Бито':'Пас'),()=>send({type:'pass'}),'sec');
@@ -742,7 +792,7 @@ function renderGame(m){
     if(r.draw)txt='Ничья! 🤝';
     else if(v.opts.teams)txt=(r.loserTeam===v.players[me].team?'Ваша команда — дураки 😅':'Ваша команда победила! 🎉');
     else txt=r.loser===me?'Вы — дурак! 🤡':`Дурак — ${esc(v.players[r.loser].name)}. Вы победили! 🎉`;
-    $('ovBody').innerHTML=`<h2>${txt}</h2>`+(S.role==='host'?'<div class="row" style="justify-content:center"><button id="ovAgain">Ещё партию</button><button class="sec" id="ovLobby">В лобби</button></div>':'<p class="muted">Ждём, пока хозяин начнёт новую партию…</p>');
+    $('ovBody').innerHTML=`<h2>${txt}</h2>`+(canTomato?'<p>🍅 Нажимайте на соперников вверху, чтобы кидаться помидорами!</p>':'')+(v.opts.pistol&&!r.draw?'<p class="muted">🔫 В следующей партии у проигравшего будет пистолет</p>':'')+(S.role==='host'?'<div class="row" style="justify-content:center"><button id="ovAgain">Ещё партию</button><button class="sec" id="ovLobby">В лобби</button></div>':'<p class="muted">Ждём, пока хозяин начнёт новую партию…</p>');
     ov.classList.add('on');
     if(S.role==='host'){$('ovAgain').onclick=()=>send({type:'lobby',op:'start'});$('ovLobby').onclick=()=>send({type:'lobby',op:'lobby'})}
   }else ov.classList.remove('on');
@@ -852,7 +902,7 @@ function clickCard(c,v){
 }
 
 /* ===================== settings ===================== */
-const CFG=Object.assign({music:true,sound:true,mvol:.35,svol:.6,anim:true},JSON.parse(localStorage.getItem('durak_cfg')||'{}'));
+const CFG=Object.assign({music:true,sound:true,mvol:.35,svol:.6,anim:true,fun:true},JSON.parse(localStorage.getItem('durak_cfg')||'{}'));
 function saveCfg(){localStorage.setItem('durak_cfg',JSON.stringify(CFG));renderTools()}
 
 /* ===================== music (CC0 tracks, OpenGameArt) ===================== */
@@ -898,6 +948,9 @@ const SND={
   horn(){[392,392,523].forEach((f,i)=>tone(f,i*.22,i==2?.7:.18,'sawtooth',.14,null,i==2?5:0))},
   boing(){tone(180,0,.4,'sine',.35,600,12)},
   laugh(){for(let i=0;i<6;i++)tone(500-i*25,i*.11,.09,'square',.1,380)},
+  splat(){noise(0,.25,.6,400);tone(220,0,.18,'sine',.3,70)},
+  bang(){noise(0,.5,.9,900);noise(0,.15,.8,3000);tone(120,0,.3,'sine',.6,40)},
+  meow(){tone(620,0,.45,'sawtooth',.06,480,7);tone(760,.12,.3,'sine',.1,560,6)},
 };
 function sfx(n){if(!CFG.sound||!ac())return;try{SND[n]()}catch(e){}}
 
@@ -908,11 +961,83 @@ const REACT_BTNS=[['chicken','🐔'],['boom','💥'],['clown','🤡'],['horn','�
 function playEvent(e){
   const v0=S.msg&&S.msg.view,nm=k=>v0&&v0.players[k]?v0.players[k].name:'';
   if(e.type==='caught')toast('🕵️ '+nm(e.who)+' поймал шулера '+nm(e.by)+'!');
+  if(e.type==='start'&&v0&&v0.ammo){const g=Object.keys(v0.ammo).filter(k=>v0.ammo[k]>0);if(g.length)setTimeout(()=>{toast('🔫 '+g.map(k=>+k===v0.me?'Вы':nm(+k)).join(', ')+(g.length>1?' достают':' достаёт')+' пистолет! Месть за прошлую партию');sfx('bang')},900)}
   if(e.type==='falsecatch')toast(nm(e.who)+' обвинил зря — '+nm(e.by)+' играл честно');
   const S2={caught:'boom',falsecatch:'laugh',start:'fanfare',throw:'slap',defend:'slap',transfer:'slide',take:'trombone',taken:'cluck',beat:'whoosh',out:'fanfare'};
   if(e.type==='over'){const v=S.msg&&S.msg.view;if(!v)return;const r=v.result||{},me=v.me;
     const lost=r.draw?false:v.opts.teams?r.loserTeam===v.players[me].team:r.loser===me;sfx(lost?'trombone':'fanfare');return}
   if(S2[e.type])sfx(S2[e.type]);
+}
+
+/* ===================== fun fx: tomatoes, pistol, runner ===================== */
+const FXS={n:null,seen:0};
+function sendFx(kind,target){const m={t:'fx',kind,target};if(S.role==='host')hostFx(0,m);else if(conn&&conn.open)conn.send(m);else toast('Нет связи')}
+function processFx(m){const F=m.fx;if(!F)return;
+  if(FXS.n!==F.n){FXS.n=F.n;FXS.seen=F.list.length?F.list[F.list.length-1].id:0;return}
+  for(const e of F.list)if(e.id>FXS.seen){FXS.seen=e.id;try{playFx(e,m)}catch(err){console.error(err)}}}
+function seatRect(i,m){
+  if(i===m.you){const hd=$('hand').getBoundingClientRect();return{x:hd.left+hd.width/2,y:hd.top+hd.height/2,me:true}}
+  const e=document.querySelector('.opp[data-i="'+i+'"]');if(!e)return null;const r=e.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2,el:e}}
+function fxEl(html,x,y,size){const d=document.createElement('div');d.className='fxe';if(html instanceof Node)d.appendChild(html);else d.textContent=html;
+  Object.assign(d.style,{left:x+'px',top:y+'px',fontSize:(size||40)+'px',transform:'translate(-50%,-50%)'});$('fx').appendChild(d);return d}
+function arc(node,a,b,dur,lift,spin){const fr=[];for(let k=0;k<=10;k++){const t=k/10,x=(b.x-a.x)*t,y=(b.y-a.y)*t-lift*4*t*(1-t);
+  fr.push({transform:`translate(-50%,-50%) translate(${x}px,${y}px) rotate(${spin*t}deg)`})}return node.animate(fr,{duration:dur,easing:'linear',fill:'forwards'})}
+function splatSvg(size){let p='';const n=14;for(let k=0;k<n;k++){const a=Math.PI*2*k/n,r=size*(.32+Math.random()*.18);p+=(k?'L':'M')+(size/2+Math.cos(a)*r).toFixed(1)+' '+(size/2+Math.sin(a)*r).toFixed(1)}
+  let drops='';for(let k=0;k<6;k++){const a=Math.random()*6.28,r=size*(.45+Math.random()*.1);drops+=`<circle cx="${(size/2+Math.cos(a)*r).toFixed(1)}" cy="${(size/2+Math.sin(a)*r).toFixed(1)}" r="${(size*.03+Math.random()*size*.04).toFixed(1)}" fill="#d62828"/>`}
+  const s=new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><path d="${p}Z" fill="#d62828"/><ellipse cx="${size*.42}" cy="${size*.4}" rx="${size*.12}" ry="${size*.07}" fill="#ff8a80" opacity=".7"/>${drops}<circle cx="${size*.55}" cy="${size*.55}" r="${size*.03}" fill="#f9e79f"/><circle cx="${size*.47}" cy="${size*.6}" r="${size*.025}" fill="#f9e79f"/></svg>`,'image/svg+xml').documentElement;
+  return document.importNode(s,true)}
+function holeSvg(size){const s=new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100"><g stroke="#fff" stroke-width="2" opacity=".85" fill="none"><path d="M50 50L12 30M50 50L85 18M50 50L92 62M50 50L60 95M50 50L18 80M50 50L35 5"/><path d="M30 40L22 52M70 32L78 44M72 68L60 78M34 70L26 60"/></g><circle cx="50" cy="50" r="11" fill="#111"/><circle cx="50" cy="50" r="14" fill="none" stroke="#666" stroke-width="3"/></svg>`,'image/svg+xml').documentElement;return document.importNode(s,true)}
+function shakeEl(el,amp){el&&el.animate([0,1,2,3,4,5].map(()=>({transform:`translate(${rnd(amp*2)-amp}px,${rnd(amp*2)-amp}px)`})).concat([{transform:'none'}]),{duration:420})}
+const CAT_SVG='data:image/svg+xml,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 96"><g fill="#f4a340"><path d="M24 52 Q4 44 10 20" stroke="#f4a340" stroke-width="9" fill="none" stroke-linecap="round"/>
+<g><ellipse cx="44" cy="74" rx="7" ry="13"><animateTransform attributeName="transform" type="rotate" values="-25 44 64;25 44 64;-25 44 64" dur=".35s" repeatCount="indefinite"/></ellipse>
+<ellipse cx="80" cy="74" rx="7" ry="13"><animateTransform attributeName="transform" type="rotate" values="25 80 64;-25 80 64;25 80 64" dur=".35s" repeatCount="indefinite"/></ellipse></g>
+<ellipse cx="62" cy="56" rx="40" ry="25"/><circle cx="100" cy="38" r="22"/><path d="M84 24 L86 4 L97 19 Z"/><path d="M104 18 L116 4 L118 27 Z"/></g>
+<ellipse cx="66" cy="64" rx="24" ry="12" fill="#fbd9a6"/><path d="M89 21 L89 11 L94 18Z M108 19 L114 11 L114 23Z" fill="#f8a5b5"/>
+<path d="M50 34 q5 8 0 15 M62 32 q5 8 0 17 M74 34 q5 8 0 15" stroke="#d9822b" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+<circle cx="95" cy="36" r="3.4" fill="#222"/><circle cx="108" cy="36" r="3.4" fill="#222"/><circle cx="96" cy="35" r="1" fill="#fff"/><circle cx="109" cy="35" r="1" fill="#fff"/>
+<path d="M99 43 l3 3 l3 -3z" fill="#e75480"/><path d="M102 46 q-3 4 -6 2 M102 46 q3 4 6 2" stroke="#333" stroke-width="1.5" fill="none"/>
+<path d="M90 44 l-14 -2 M90 47 l-13 3 M114 44 l14 -2 M114 47 l13 3" stroke="#333" stroke-width="1.2"/></svg>`);
+function playFx(e,m){
+  if(!CFG.fun)return;const v=m.view;if(!v)return;
+  const nm=i=>v.players[i]?v.players[i].name:'';
+  if(e.kind==='tomato'){
+    const a=seatRect(e.from,m),b=seatRect(e.target,m);if(!a||!b)return;sfx('whoosh');
+    const t=fxEl('🍅',a.x,a.y,b.me?54:40);
+    arc(t,a,b,650,140,540).onfinish=()=>{t.remove();sfx('splat');
+      const size=b.me?190:80,jx=rnd(40)-20,jy=rnd(20)-10;
+      const s=fxEl(splatSvg(size),b.x+jx,b.y+jy);
+      s.animate([{transform:'translate(-50%,-50%) scale(.2)'},{transform:'translate(-50%,-50%) scale(1.15)'},{transform:'translate(-50%,-50%) scale(1)'}],{duration:220,fill:'forwards'});
+      setTimeout(()=>s.animate([{opacity:1,transform:'translate(-50%,-50%)'},{opacity:0,transform:'translate(-50%,-30%) scaleY(1.3)'}],{duration:b.me?2500:1800,fill:'forwards'}).onfinish=()=>s.remove(),b.me?2200:3500);
+      shakeEl(b.el||$('hand'),b.me?10:6);
+      if(b.me)toast('🍅 '+nm(e.from)+' попал в вас помидором!')};
+  }else if(e.kind==='shot'){
+    const a=seatRect(e.from,m),b=seatRect(e.target,m);if(!a||!b)return;sfx('bang');
+    const g=fxEl('🔫',a.x,a.y,46);g.style.transform='translate(-50%,-50%)'+(b.x<a.x?' scaleX(-1)':'');
+    g.animate([{opacity:0},{opacity:1,offset:.15},{opacity:1,offset:.7},{opacity:0}],{duration:900,fill:'forwards'}).onfinish=()=>g.remove();
+    const len=Math.hypot(b.x-a.x,b.y-a.y),ang=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI;
+    const tr=document.createElement('div');tr.className='fxe';Object.assign(tr.style,{left:a.x+'px',top:a.y+'px',width:len+'px',height:'3px',background:'linear-gradient(90deg,#fff8,#ffeb3b)',transformOrigin:'0 50%',transform:`rotate(${ang}deg)`});$('fx').appendChild(tr);
+    tr.animate([{opacity:1},{opacity:0}],{duration:250,fill:'forwards'}).onfinish=()=>tr.remove();
+    const bah=fxEl('БАХ!',b.x+20,b.y-30,b.me?64:38);Object.assign(bah.style,{fontWeight:900,color:'#ffeb3b',textShadow:'3px 3px 0 #000'});
+    bah.animate([{transform:'translate(-50%,-50%) scale(.3)'},{transform:'translate(-50%,-50%) scale(1.2)',offset:.3},{transform:'translate(-50%,-50%) scale(1)',opacity:1,offset:.8},{transform:'translate(-50%,-50%) scale(1)',opacity:0}],{duration:1100,fill:'forwards'}).onfinish=()=>bah.remove();
+    const hx=b.me?rnd(innerWidth*.6)+innerWidth*.2:b.x+rnd(30)-15,hy=b.me?rnd(innerHeight*.5)+innerHeight*.2:b.y+rnd(20)-10;
+    const hole=fxEl(holeSvg(b.me?220:60),hx,hy);
+    setTimeout(()=>hole.animate([{opacity:1},{opacity:0}],{duration:1500,fill:'forwards'}).onfinish=()=>hole.remove(),b.me?2500:5000);
+    shakeEl(b.me?$('game'):b.el,b.me?16:9);
+    if(b.me)toast('🔫 '+nm(e.from)+' выстрелил в вас!');else if(e.from!==m.you)toast('🔫 '+nm(e.from)+' стреляет в '+nm(e.target)+'!');
+  }else if(e.kind==='runner'){
+    const mid=$('mid').getBoundingClientRect();if(!mid.height)return;
+    const d=document.createElement('div');d.className='runner';const im=new Image();im.alt='';im.draggable=false;
+    const url=v.opts.runnerImg;im.src=url&&/^https:\/\//.test(url)?url:CAT_SVG;im.onerror=()=>{if(im.src!==CAT_SVG)im.src=CAT_SVG};
+    d.appendChild(im);const y=mid.top+12+e.y*Math.max(10,mid.height-110);
+    Object.assign(d.style,{left:'0px',top:y+'px'});$('fx').appendChild(d);
+    const from=e.dir>0?-160:innerWidth+40,to=e.dir>0?innerWidth+40:-160,flip=e.dir>0?'':' scaleX(-1)';
+    let anim=d.animate([{transform:`translateX(${from}px)${flip}`},{transform:`translateX(${to}px)${flip}`}],{duration:e.speed||7000,easing:'linear',fill:'forwards'});
+    anim.onfinish=()=>d.remove();
+    if(Math.random()<.5)sfx('meow');
+    d.onclick=ev=>{sfx('meow');for(let k=0;k<6;k++){const hz=fxEl(R(['💕','✨','💖']),ev.clientX,ev.clientY,24);
+      hz.animate([{transform:'translate(-50%,-50%)',opacity:1},{transform:`translate(calc(-50% + ${rnd(120)-60}px),calc(-50% - ${60+rnd(60)}px))`,opacity:0}],{duration:900}).onfinish=()=>hz.remove()}
+      anim.playbackRate=2.2};
+  }
 }
 
 /* ===================== chat ===================== */
@@ -959,12 +1084,13 @@ function renderTools(){
 }
 
 /* ===================== wiring ===================== */
-function renderMP(){$('mpAnim').checked=CFG.anim;$('mpOn').checked=CFG.music;$('mpSndOn').checked=CFG.sound;$('mpVol').value=Math.round(CFG.mvol*100);$('mpSnd').value=Math.round(CFG.svol*100);
+function renderMP(){$('mpAnim').checked=CFG.anim;$('mpFun').checked=CFG.fun;$('mpOn').checked=CFG.music;$('mpSndOn').checked=CFG.sound;$('mpVol').value=Math.round(CFG.mvol*100);$('mpSnd').value=Math.round(CFG.svol*100);
   $('mpVolV').textContent=Math.round(CFG.mvol*100)+'%';$('mpSndV').textContent=Math.round(CFG.svol*100)+'%';
   if(!$('mpTrack').textContent&&MU.list.length)$('mpTrack').textContent='♪ '+MU.list[MU.k].t}
 $('mpIos').style.display=/iPhone|iPad|iPod/.test(navigator.userAgent)?'block':'none';
 $('tMusic').onclick=()=>{const p=$('musicPanel');const on=!p.classList.contains('on');p.classList.toggle('on',on);if(on){CH.open=false;renderTools();renderMP()}};
 $('mpAnim').onchange=e=>{CFG.anim=e.target.checked;saveCfg()};
+$('mpFun').onchange=e=>{CFG.fun=e.target.checked;saveCfg();if(!CFG.fun)$('fx').innerHTML=''};
 $('mpClose').onclick=()=>$('musicPanel').classList.remove('on');
 $('mpOn').onchange=e=>{CFG.music=e.target.checked;MU.started=true;saveCfg();musicSync()};
 $('mpSndOn').onchange=e=>{CFG.sound=e.target.checked;saveCfg();sfx('blip')};
@@ -1004,6 +1130,8 @@ $('lSeats').onclick=e=>{const k=e.target.dataset.kick;if(k)send({type:'lobby',op
 for(const[id,k]of[['oMode','mode'],['oDeck','deck'],['oThrow','throwIn'],['oTeams','teams']])$(id).onchange=e=>send({type:'lobby',op:'opt',k,v:k==='teams'?+e.target.value:e.target.value});
 $('oFirst5').onchange=e=>send({type:'lobby',op:'opt',k:'first5',v:e.target.checked});
 $('oShow').onchange=e=>send({type:'lobby',op:'opt',k:'trumpShow',v:e.target.checked});
+for(const[id,k]of[['oTomato','tomatoes'],['oPistol','pistol'],['oRunner','runner']])$(id).onchange=e=>send({type:'lobby',op:'opt',k,v:e.target.checked});
+$('oRunnerImg').onchange=e=>{const u=e.target.value.trim();if(u&&!/^https:\/\//.test(u))toast('Нужна ссылка, начинающаяся с https://');send({type:'lobby',op:'opt',k:'runnerImg',v:u})};
 $('oBots').onchange=e=>send({type:'lobby',op:'opt',k:'bots',v:e.target.value});
 $('oCheat').onchange=e=>send({type:'lobby',op:'opt',k:'cheat',v:e.target.checked});
 window.addEventListener('hashchange',()=>{if(!S.role)initMenu()});
