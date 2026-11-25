@@ -142,6 +142,7 @@ body{background:radial-gradient(ellipse at 50% 45%,#16774b 0%,#0d5534 45%,#062c1
     <div class="row"><label>Режим</label><select id="oMode"><option value="podkidnoy">Подкидной</option><option value="perevodnoy">Переводной</option></select></div>
     <div class="row"><label>Колода</label><select id="oDeck"><option value="36">36 карт</option><option value="24">24 карты</option><option value="52">52 карты</option></select></div>
     <div class="row"><label>Подкидывают</label><select id="oThrow"><option value="all">Все игроки</option><option value="neighbors">Только соседи</option></select></div>
+    <div class="row"><label>Боты</label><select id="oBots"><option value="smart">Умные (считают карты)</option><option value="easy">Простые</option></select></div>
     <div class="row"><label>Командная игра</label><select id="oTeams"><option value="0">Каждый за себя</option><option value="1">Команды (2×2 / 3×3)</option></select></div>
     <div class="row"><label><input type="checkbox" id="oFirst5"> Первый отбой — не больше 5 карт</label></div>
     <div class="row"><label><input type="checkbox" id="oShow"> Перевод показом козыря (переводной)</label></div>
@@ -218,6 +219,9 @@ function opp(g,i){return j=>!g.opts.teams||g.players[j].team!==g.players[i].team
 function cap(g){return g.firstBout&&g.opts.first5?5:6}
 function sortHand(h,tr){return h.slice().sort((x,y)=>((suit(x)===tr)-(suit(y)===tr))||'SCDH'.indexOf(suit(x))-'SCDH'.indexOf(suit(y))||rank(x)-rank(y))}
 function log(g,t){g.log.push(t);if(g.log.length>40)g.log.shift()}
+function mem(g){if(!g.known)g.known=g.players.map(()=>[]);if(!g.gone)g.gone=[];return g}
+function forget(g,c){mem(g);for(const k of g.known){const j=k.indexOf(c);if(j>=0)k.splice(j,1)}}
+function remember(g,i,c){mem(g);if(!g.known[i].includes(c))g.known[i].push(c)}
 function ev(g,type,o){g.evSeq=(g.evSeq||0)+1;(g.evs=g.evs||[]).push({id:g.evSeq,type,...o});if(g.evs.length>12)g.evs.shift()}
 
 function newGame(seats,opts){
@@ -230,7 +234,8 @@ function newGame(seats,opts){
   let best=-1,br=99;g.players.forEach((p,i)=>p.hand.forEach(c=>{if(suit(c)===g.trump&&rank(c)<br){br=rank(c);best=i}}));
   if(best<0)best=rnd(g.players.length);
   log(g,`Козырь: ${SYM[g.trump]}. Первым ходит ${g.players[best].name}`+(br<99?` (младший козырь)`:''));
-  g.gid=Math.random().toString(36).slice(2);ev(g,'start',{});
+  g.gid=Math.random().toString(36).slice(2);ev(g,'start',{});mem(g);
+  if(!g.deck.length)remember(g,g.players.length-1,g.trumpCard);
   startBout(g,best);
   return g;
 }
@@ -285,13 +290,13 @@ function act(g,i,a){
   if(g.over)return false;const P=g.players[i];
   switch(a.type){
     case'throw':{if(!legalThrows(g,i).includes(a.card))return false;const ch=!legalThrows(g,i,true).includes(a.card);
-      rm(P.hand,a.card);g.table.push({a:a.card,d:null,by:i});g.passed=[];if(ch)g.cheats.push({c:a.card,rolled:[]});
+      rm(P.hand,a.card);forget(g,a.card);g.table.push({a:a.card,d:null,by:i});g.passed=[];if(ch)g.cheats.push({c:a.card,rolled:[]});
       log(g,`${P.name}: ${g.taking?'подкидывает':'ходит'} ${cname(a.card)}`);ev(g,'throw',{who:i,card:a.card,trump:suit(a.card)===g.trump});break}
-    case'defend':{if(!defendTargets(g,i,a.card).includes(a.idx))return false;if(!defendTargets(g,i,a.card,true).includes(a.idx))g.cheats.push({c:a.card,rolled:[]});rm(P.hand,a.card);g.table[a.idx].d=a.card;g.passed=[];
+    case'defend':{if(!defendTargets(g,i,a.card).includes(a.idx))return false;if(!defendTargets(g,i,a.card,true).includes(a.idx))g.cheats.push({c:a.card,rolled:[]});rm(P.hand,a.card);forget(g,a.card);g.table[a.idx].d=a.card;g.passed=[];
       log(g,`${P.name} бьёт ${cname(g.table[a.idx].a)} → ${cname(a.card)}`);ev(g,'defend',{who:i,card:a.card,trump:suit(a.card)===g.trump});break}
     case'transfer':case'show':{const tr=transferInfo(g,i);if(!tr)return false;
-      if(a.type==='transfer'){if(!tr.cards.includes(a.card))return false;rm(P.hand,a.card);g.table.push({a:a.card,d:null,by:i});log(g,`${P.name} переводит ${cname(a.card)}`)}
-      else{if(!tr.show.includes(a.card))return false;g.shown.push(a.card);log(g,`${P.name} переводит, показав козырь ${cname(a.card)}`)}
+      if(a.type==='transfer'){if(!tr.cards.includes(a.card))return false;rm(P.hand,a.card);forget(g,a.card);g.table.push({a:a.card,d:null,by:i});log(g,`${P.name} переводит ${cname(a.card)}`)}
+      else{if(!tr.show.includes(a.card))return false;g.shown.push(a.card);remember(g,i,a.card);log(g,`${P.name} переводит, показав козырь ${cname(a.card)}`)}
       g.attacker=i;g.defender=tr.nx;g.passed=[];g.limit=Math.min(cap(g),g.players[tr.nx].hand.length);ev(g,'transfer',{who:i,to:tr.nx});break}
     case'take':{if(i!==g.defender||g.taking||!g.table.some(t=>!t.d))return false;g.taking=true;g.passed=[];log(g,`${P.name} берёт`);ev(g,'take',{who:i});break}
     case'pass':{if(!legalFor(g,i).pass)return false;g.passed.push(i);break}
@@ -300,9 +305,9 @@ function act(g,i,a){
       const k=g.cheats.findIndex(x=>x.c===c);
       if(k<0){g.noAccuse.push(i);log(g,`${P.name} обвинил зря — ${C.name} играл честно`);ev(g,'falsecatch',{who:i,by});break}
       g.cheats.splice(k,1);log(g,`🕵️ ${P.name} поймал шулера ${C.name}!`);ev(g,'caught',{who:i,by});
-      if(part==='d'){t.d=null;C.hand.push(c);log(g,`${C.name} в наказание забирает все карты`);g.taking=true;endBout(g,true);return true}
-      g.table.splice(a.idx,1);C.hand.push(c);
-      if(t.d){g.players[g.defender].hand.push(t.d);const j=g.cheats.findIndex(x=>x.c===t.d);if(j>=0)g.cheats.splice(j,1)}
+      if(part==='d'){t.d=null;C.hand.push(c);remember(g,by,c);log(g,`${C.name} в наказание забирает все карты`);g.taking=true;endBout(g,true);return true}
+      g.table.splice(a.idx,1);C.hand.push(c);remember(g,by,c);
+      if(t.d){g.players[g.defender].hand.push(t.d);remember(g,g.defender,t.d);const j=g.cheats.findIndex(x=>x.c===t.d);if(j>=0)g.cheats.splice(j,1)}
       if(g.deck.length)C.hand.push(g.deck.shift());
       g.blocked.push(by);g.passed=[];log(g,`${C.name} забирает карту назад, штрафную из колоды и больше не подкидывает`);break}
     default:return false;
@@ -320,14 +325,15 @@ function normalize(g){
 }
 function endBout(g,taken){
   const D=g.players[g.defender],cards=g.table.flatMap(t=>t.d?[t.a,t.d]:[t.a]);
-  if(taken){D.hand.push(...cards);log(g,`${D.name} забирает ${cards.length} карт`)}
-  else{g.discard+=cards.length;log(g,'Бито')}
+  mem(g);
+  if(taken){D.hand.push(...cards);cards.forEach(c=>remember(g,g.defender,c));log(g,`${D.name} забирает ${cards.length} карт`)}
+  else{g.discard+=cards.length;g.gone.push(...cards);log(g,'Бито')}
   ev(g,taken?'taken':'beat',{who:g.defender,n:cards.length});
   g.table=[];
   const n=g.players.length,order=[];
   for(let k=0;k<n;k++){const j=(g.attacker+k)%n;if(j!==g.defender&&!g.players[j].out)order.push(j)}
   order.push(g.defender);
-  for(const j of order){const p=g.players[j];while(p.hand.length<6&&g.deck.length)p.hand.push(g.deck.shift())}
+  for(const j of order){const p=g.players[j];while(p.hand.length<6&&g.deck.length){const c=g.deck.shift();p.hand.push(c);if(c===g.trumpCard)remember(g,j,c)}}
   g.firstBout=false;
   g.players.forEach((p,k)=>{if(!p.out&&!p.hand.length&&!g.deck.length){p.out=true;p.place=++g.outCount;log(g,`${p.name} вышел из игры`);ev(g,'out',{who:k})}});
   const act=g.players.map((p,i)=>i).filter(i=>!g.players[i].out);
@@ -342,15 +348,25 @@ function endBout(g,taken){
 }
 
 /* ===================== bots ===================== */
-function botAct(g,i){
-  const P=g.players[i],tr=g.trump,val=c=>rank(c)+(suit(c)===tr?20:0);
-  const big=g.deck.length>6;
+function botCatch(g,i){
+  const P=g.players[i];
   if(g.opts.cheat&&g.cheats&&g.cheats.length&&!P.out&&!(g.noAccuse||[]).includes(i)){
     for(const ch of g.cheats){if(ch.rolled.includes(i))continue;
       let idx=-1,part='a';g.table.forEach((t,k)=>{if(t.a===ch.c){idx=k;part='a'}if(t.d===ch.c){idx=k;part='d'}});
       if(idx<0)continue;const by=part==='a'?g.table[idx].by:g.defender;if(by===i||!opp(g,i)(by))continue;
       ch.rolled.push(i);if(Math.random()<.35)return{type:'catch',idx,part}}
   }
+  return null;
+}
+function smartBot(g,i){
+  const c=botCatch(g,i);if(c)return c;
+  if(g.opts.cheat&&Math.random()<.35){const a=botAct(g,i,true);if(a&&(a.type==='defend'||a.type==='throw'))return a}
+  return smartAI(viewFor(g,i));
+}
+function botAct(g,i,noCatch){
+  const P=g.players[i],tr=g.trump,val=c=>rank(c)+(suit(c)===tr?20:0);
+  const big=g.deck.length>6;
+  if(!noCatch){const c=botCatch(g,i);if(c)return c}
   if(i===g.defender&&!g.taking&&g.table.some(t=>!t.d)){
     const ti=transferInfo(g,i);
     if(ti){
@@ -385,6 +401,108 @@ function botAct(g,i){
   return null;
 }
 
+/* ===================== smart AI ===================== */
+function aiVal(c,tr){return rank(c)+(suit(c)===tr?13:0)}
+function smartAI(v){
+  if(!v||v.over||v.players[v.me].out)return null;
+  const L=v.legal,tr=v.trump,me=v.me,val=c=>aiVal(c,tr),hand=v.hand,def=v.defender;
+  const active=v.players.map((p,i)=>i).filter(i=>!v.players[i].out);
+  if(active.length===2&&!v.opts.teams&&!globalThis.AI_NOSEARCH){const a=v.deck===0?aiSearch(v,active):v.deck<=(globalThis.AI_SAMPLE_DECK??0)?aiSample(v,active):null;if(a)return a}
+  const known=v.known||[],gone=new Set(v.gone||[]),mine=new Set(hand);
+  const onT=new Set(v.table.flatMap(t=>[t.a,t.d]).filter(Boolean)),knownOther=new Set();
+  known.forEach((k,j)=>{if(j!==me)(k||[]).forEach(c=>knownOther.add(c))});
+  const unknown=makeDeck(v.opts.deck).filter(c=>!mine.has(c)&&!gone.has(c)&&!onT.has(c)&&!knownOther.has(c));
+  const beatChance=(p,c)=>{
+    if(p<0)return 0;const kn=known[p]||[];if(kn.some(x=>beats(x,c,tr)))return 1;
+    const n=v.players[p].count-kn.length,U=unknown.length;if(n<=0||!U)return 0;
+    const b=unknown.filter(x=>beats(x,c,tr)).length;let none=1;for(let k=0;k<n&&k<U;k++)none*=Math.max(0,U-b-k)/(U-k);return 1-none};
+  const hD=L.hDefend||L.defend,hT=v.opts.cheat?(L.hThrow||[]):L.throw;
+  const unb=v.table.filter(t=>!t.d).length;
+  // ---- defence ----
+  if(me===def&&!v.taking&&unb){
+    const order=v.table.map((t,k)=>k).filter(k=>!v.table[k].d).sort((a,b)=>val(v.table[b].a)-val(v.table[a].a));
+    const used=new Set(),plan=[];let ok=true;
+    for(const k of order){const o=Object.keys(hD).filter(c=>!used.has(c)&&hD[c].includes(k)).sort((a,b)=>val(a)-val(b));
+      if(!o.length){ok=false;break}used.add(o[0]);plan.push({idx:k,card:o[0]})}
+    const W=globalThis.AIW||{},pen=c=>suit(c)===tr?(W.tb??2)+(rank(c)-6)*(W.tr??.7):Math.max(0,rank(c)-10)*(W.nr??.6);
+    const coverPen=plan.reduce((s,p)=>s+pen(p.card),0);
+    if(L.show&&L.show.length&&(!ok||plan.some(p=>suit(p.card)===tr)))return{type:'show',card:L.show[0]};
+    const tc=(L.transfer||[]).slice().sort((a,b)=>val(a)-val(b));
+    if(tc.length&&(!ok||pen(tc[0])<coverPen*.7))return{type:'transfer',card:tc[0]};
+    if(!ok)return L.take?{type:'take'}:null;
+    const nCards=v.table.reduce((s,t)=>s+(t.d?2:1),0);
+    const takePen=nCards*(v.deck>14?(W.k1??5):v.deck>6?(W.k2??6):v.deck>0?(W.k3??9):99);
+    if(v.deck>0&&coverPen>takePen&&L.take)return{type:'take'};
+    return{type:'defend',...plan[0]};
+  }
+  // ---- attack / throw-in ----
+  if(hT.length){
+    const cnt=r=>hand.filter(c=>rank(c)===r).length;
+    if(!v.table.length){
+      const late=v.deck<=6;
+      const score=c=>{let s=val(c);if(suit(c)!==tr)s-=3*(cnt(rank(c))-1);if(suit(c)===tr&&v.deck>0)s+=10;
+        const bc=beatChance(def,c);s-=(1-bc)*(late?10:3);return s};
+      return{type:'throw',card:hT.slice().sort((a,b)=>score(a)-score(b))[0]};
+    }
+    const sorted=hT.slice().sort((a,b)=>val(a)-val(b));
+    if(v.taking){const junk=sorted.filter(c=>suit(c)!==tr&&(v.deck===0||rank(c)<=11));if(junk.length)return{type:'throw',card:junk[0]}}
+    else for(const c of sorted){const bc=beatChance(def,c);
+      if(v.deck>0?(suit(c)!==tr&&(rank(c)<=10||bc<.4)):(suit(c)!==tr||bc===0))return{type:'throw',card:c}}
+  }
+  if(L.pass)return{type:'pass'};
+  return null;
+}
+function aiSample(v,active){
+  const me=v.me,op=active.find(i=>i!==me);
+  const gone=new Set(v.gone||[]),mine=new Set(v.hand),onT=new Set(v.table.flatMap(t=>[t.a,t.d]).filter(Boolean));
+  const kOp=((v.known||[])[op]||[]).filter(c=>c!==v.trumpCard),kSet=new Set(kOp);
+  const pool=makeDeck(v.opts.deck).filter(c=>!mine.has(c)&&!gone.has(c)&&!onT.has(c)&&!kSet.has(c)&&c!==v.trumpCard);
+  const u=v.players[op].count-kOp.length;if(u<0||pool.length!==u+v.deck-1)return null;
+  const votes=new Map();
+  for(let s=0;s<6;s++){const p=shuffle(pool.slice());
+    const m=aiSearch(v,active,{ophand:kOp.concat(p.slice(0,u)),deck:p.slice(u).concat([v.trumpCard])},4000);
+    if(!m)return null;const k=JSON.stringify(m);votes.set(k,(votes.get(k)||0)+1)}
+  let best=null,bc=0;for(const[k,c]of votes)if(c>bc){bc=c;best=JSON.parse(k)}
+  return best;
+}
+function aiSearch(v,active,fill,MAXN=30000){
+  const me=v.me,op=active.find(i=>i!==me);
+  const gone=new Set(v.gone||[]),mine=new Set(v.hand),onT=new Set(v.table.flatMap(t=>[t.a,t.d]).filter(Boolean));
+  const ophand=fill?fill.ophand:makeDeck(v.opts.deck).filter(c=>!mine.has(c)&&!gone.has(c)&&!onT.has(c));
+  if(ophand.length!==v.players[op].count)return null;
+  const map=i=>i===me?0:1;
+  const g0={opts:{...v.opts,cheat:0,teams:0,first5:false},players:[{name:'A',hand:v.hand.slice(),out:false,place:0,team:0},{name:'B',hand:ophand,out:false,place:0,team:1}],
+    deck:fill?fill.deck.slice():[],discard:0,table:v.table.map(t=>({a:t.a,d:t.d,by:map(t.by)})),log:[],evs:[],firstBout:false,taking:v.taking,passed:v.passed.filter(i=>i===me||i===op).map(map),
+    shown:[],cheats:[],blocked:[],noAccuse:[],tried:[],over:false,result:null,outCount:0,trump:v.trump,trumpCard:v.trumpCard,
+    attacker:map(v.attacker),defender:map(v.defender),limit:v.limit!=null?v.limit:6,known:[[],[]],gone:[]};
+  if(v.attacker!==me&&v.attacker!==op||v.defender!==me&&v.defender!==op)return null;
+  const tr=v.trump,val=c=>aiVal(c,tr);
+  const actor=g=>g.table.some(t=>!t.d)&&!g.taking?g.defender:g.attacker;
+  const moves=g=>{const a=actor(g),L=legalFor(g,a),ms=[];
+    if(a===g.defender&&!g.taking){const k=g.table.findIndex(t=>!t.d);
+      for(const c in L.defend)if(L.defend[c].includes(k))ms.push({type:'defend',card:c,idx:k});
+      L.transfer.forEach(c=>ms.push({type:'transfer',card:c}));if(L.take)ms.push({type:'take'})}
+    else{L.throw.forEach(c=>ms.push({type:'throw',card:c}));if(L.pass)ms.push({type:'pass'})}
+    ms.sort((x,y)=>(x.card?val(x.card):40)-(y.card?val(y.card):40));return{a,ms}};
+  const sv=h=>h.reduce((s,c)=>s+val(c),0)/Math.max(1,h.length);
+  const evalG=(g,d)=>{if(g.over){const r=g.result||{};return r.draw?0:r.loser===0?-1000-d:1000+d}
+    const h0=g.players[0].hand,h1=g.players[1].hand;return (h1.length-h0.length)*10+(sv(h0)-sv(h1))*1.5};
+  const clone=g=>JSON.parse(JSON.stringify(g));
+  let nodes=0;
+  const mm=(g,d,al,be)=>{nodes++;if(g.over||d===0||nodes>MAXN)return evalG(g,d);
+    const{a,ms}=moves(g);if(!ms.length)return evalG(g,d);
+    if(a===0){let b=-1e9;for(const m of ms){const g2=clone(g);g2.log=[];g2.evs=[];if(!act(g2,a,m))continue;b=Math.max(b,mm(g2,d-1,al,be));al=Math.max(al,b);if(al>=be)break}return b}
+    let b=1e9;for(const m of ms){const g2=clone(g);g2.log=[];g2.evs=[];if(!act(g2,a,m))continue;b=Math.min(b,mm(g2,d-1,al,be));be=Math.min(be,b);if(al>=be)break}return b};
+  const root=moves(g0);if(root.a!==0||!root.ms.length)return null;
+  if(root.ms.length===1)return root.ms[0];
+  let best=null;
+  for(let depth=2;depth<=30;depth+=2){
+    let bm=null,bs=-1e9;
+    for(const m of root.ms){const g2=clone(g0);if(!act(g2,0,m))continue;const s=mm(g2,depth-1,bs,1e9);if(s>bs){bs=s;bm=m}if(nodes>MAXN)break}
+    if(nodes>MAXN)break;best=bm;if(bs>=900)break}
+  return best;
+}
+
 /* ===================== host ===================== */
 let H=null;        // host state
 let peer=null,conn=null;
@@ -392,7 +510,7 @@ let botTimer=null;
 const ME={name:localStorage.getItem('durak_name')||'',token:localStorage.getItem('durak_token')||(Math.random().toString(36).slice(2)+Date.now().toString(36))};
 localStorage.setItem('durak_token',ME.token);
 const BOTN=['Бот Вася','Бот Маша','Бот Петя','Бот Оля','Бот Гриша','Бот Нина'];
-const defOpts=()=>({mode:'podkidnoy',deck:36,throwIn:'all',teams:0,first5:false,trumpShow:false,cheat:0});
+const defOpts=()=>({mode:'podkidnoy',deck:36,throwIn:'all',teams:0,first5:false,trumpShow:false,cheat:0,bots:'smart'});
 function saveHost(){if(!H)return;const s={code:H.code,opts:H.opts,seats:H.seats.map(x=>({name:x.name,isBot:x.isBot,token:x.token})),game:H.game,chat:H.chat};localStorage.setItem('durak_host',JSON.stringify(s))}
 function loadHost(){try{return JSON.parse(localStorage.getItem('durak_host'))}catch(e){return null}}
 function newCode(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='';for(let i=0;i<6;i++)s+=A[rnd(A.length)];return s}
@@ -452,7 +570,7 @@ function viewFor(g,i){
   return{me:i,players:g.players.map((q,k)=>({name:q.name,count:q.hand.length,out:q.out,place:q.place,team:q.team,isBot:q.isBot})),
     hand:sortHand(p.hand,g.trump),deck:g.deck.length,trump:g.trump,trumpCard:g.trumpCard,table:g.table,attacker:g.attacker,defender:g.defender,
     taking:g.taking,passed:g.passed,discard:g.discard,log:g.log.slice(-14),over:g.over,result:g.result,opts:g.opts,legal:legalFor(g,i),
-    eligible:g.players.map((_,k)=>eligible(g,k)),gid:g.gid||'old',evs:g.evs||[]};
+    eligible:g.players.map((_,k)=>eligible(g,k)),gid:g.gid||'old',evs:g.evs||[],known:mem(g).known.map((k,j)=>j===i?[]:k),gone:g.gone,limit:g.limit};
 }
 function msgFor(i){return{t:'state',code:H.code,opts:H.opts,seats:seatInfo(),you:i,view:H.game?viewFor(H.game,i):null,chat:H.chat}}
 function broadcast(){
@@ -466,7 +584,7 @@ function hostAct(i,a){
   if(act(H.game,i,a)){saveHost();broadcast();scheduleBots()}
 }
 function lobbyOp(a){
-  if(a.op==='opt'){const o={...H.opts};if(['mode','throwIn'].includes(a.k))o[a.k]=String(a.v);if(a.k==='deck')o.deck=+a.v;if(['teams','first5','trumpShow','cheat'].includes(a.k))o[a.k]=a.v?1:0;H.opts=o}
+  if(a.op==='opt'){const o={...H.opts};if(['mode','throwIn'].includes(a.k))o[a.k]=String(a.v);if(a.k==='bots')o.bots=a.v==='easy'?'easy':'smart';if(a.k==='deck')o.deck=+a.v;if(['teams','first5','trumpShow','cheat'].includes(a.k))o[a.k]=a.v?1:0;H.opts=o}
   if(a.op==='bot'&&H.seats.length<MAXP[H.opts.deck]){const used=H.seats.map(s=>s.name);H.seats.push({name:BOTN.find(n=>!used.includes(n))||'Бот',isBot:true,token:'bot'+Math.random()})}
   if(a.op==='kick'&&a.i>0&&a.i<H.seats.length){const s=H.seats[a.i];if(s.conn){try{s.conn.send({t:'err',msg:'Вас убрали из комнаты'});s.conn.close()}catch(e){}}H.seats.splice(a.i,1)}
   if(a.op==='toBot'&&H.game&&a.i>0){H.seats[a.i].isBot=true;H.game.players[a.i].isBot=true;H.seats[a.i].name=H.game.players[a.i].name+' (бот)';H.game.players[a.i].name=H.seats[a.i].name}
@@ -483,8 +601,8 @@ function scheduleBots(){
   botTimer=setTimeout(()=>{
     const n=g.players.length,order=[g.defender,g.attacker];for(let k=0;k<n;k++)if(!order.includes(k))order.push(k);
     for(const i of order){if(i<0||!g.players[i].isBot||g.players[i].out)continue;
-      const a=botAct(g,i);if(a&&act(g,i,a)){saveHost();broadcast();scheduleBots();return}}
-  },750);
+      const a=g.opts.bots==='easy'?botAct(g,i):smartBot(g,i);if(a&&act(g,i,a)){saveHost();broadcast();scheduleBots();return}}
+  },g.opts.bots==='easy'?750:600);
 }
 
 /* ===================== guest ===================== */
@@ -542,6 +660,7 @@ function renderLobby(m){
   const host=S.role==='host';
   if(!m){$('lSeats').innerHTML='';$('hostBtns').style.display='none';$('lWait').textContent='';return}
   for(const[id,k]of[['oMode','mode'],['oDeck','deck'],['oThrow','throwIn'],['oTeams','teams']]){$(id).value=String(m.opts[k]);$(id).disabled=!host}
+  $('oBots').value=m.opts.bots==='easy'?'easy':'smart';$('oBots').disabled=!host;
   $('oFirst5').checked=!!m.opts.first5;$('oShow').checked=!!m.opts.trumpShow;$('oCheat').checked=!!m.opts.cheat;$('oFirst5').disabled=$('oShow').disabled=$('oCheat').disabled=!host;
   $('lCount').textContent=`${m.seats.length}/${MAXP[m.opts.deck]}`;
   $('lSeats').innerHTML=m.seats.map((s,i)=>`<div class="seat"><span><span class="dot ${s.online?'':'off'}"></span>${esc(s.name)}${i===0?' 👑':''}${i===m.you?' (вы)':''}${m.opts.teams?` <span class="tag">команда ${i%2+1}</span>`:''}</span>${host&&i>0?`<button class="sec" data-kick="${i}" style="padding:3px 9px">✕</button>`:''}</div>`).join('');
@@ -885,6 +1004,7 @@ $('lSeats').onclick=e=>{const k=e.target.dataset.kick;if(k)send({type:'lobby',op
 for(const[id,k]of[['oMode','mode'],['oDeck','deck'],['oThrow','throwIn'],['oTeams','teams']])$(id).onchange=e=>send({type:'lobby',op:'opt',k,v:k==='teams'?+e.target.value:e.target.value});
 $('oFirst5').onchange=e=>send({type:'lobby',op:'opt',k:'first5',v:e.target.checked});
 $('oShow').onchange=e=>send({type:'lobby',op:'opt',k:'trumpShow',v:e.target.checked});
+$('oBots').onchange=e=>send({type:'lobby',op:'opt',k:'bots',v:e.target.value});
 $('oCheat').onchange=e=>send({type:'lobby',op:'opt',k:'cheat',v:e.target.checked});
 window.addEventListener('hashchange',()=>{if(!S.role)initMenu()});
 initMenu();
