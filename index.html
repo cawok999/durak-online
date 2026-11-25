@@ -311,7 +311,7 @@ function act(g,i,a){
 function normalize(g){
   if(!g.table.length||g.over)return;
   const el=g.players.map((_,i)=>i).filter(i=>eligible(g,i));
-  for(const e of el)if(!g.passed.includes(e)&&!legalThrows(g,e,true).length)g.passed.push(e);
+  for(const e of el)if(!g.passed.includes(e)&&!legalThrows(g,e,true).length&&(!g.opts.cheat||g.players[e].isBot))g.passed.push(e);
   const all=el.every(e=>g.passed.includes(e));
   const unb=g.table.filter(t=>!t.d).length;
   if(g.taking&&all)endBout(g,true);
@@ -411,8 +411,11 @@ function openPeer(){
   peer.on('open',()=>{S.net='Онлайн: друзья могут подключаться по ссылке';render()});
   peer.on('error',e=>{
     if(e.type==='unavailable-id'&&!H.game&&H.seats.length===1){peer.destroy();H.code=newCode();S.code=H.code;location.hash=H.code;saveHost();openPeer();return}
+    if(['unavailable-id','network','server-error','socket-error','socket-closed'].includes(e.type)){
+      S.net='Переподключение к сети…';render();try{peer.destroy()}catch(_){}
+      clearTimeout(openPeer.t);openPeer.t=setTimeout(openPeer,e.type==='unavailable-id'?4000:3000);return}
     S.net='Ошибка сети: '+e.type;render()});
-  peer.on('disconnected',()=>{S.net='Переподключение…';render();setTimeout(()=>{try{peer.reconnect()}catch(e){}},2000)});
+  peer.on('disconnected',()=>{S.net='Переподключение…';render();const p=peer;setTimeout(()=>{if(p===peer&&!p.destroyed)try{p.reconnect()}catch(e){}},2000)});
   peer.on('connection',c=>{
     c.on('data',m=>hostMsg(c,m));
     c.on('close',()=>{const s=H.seats.find(s=>s.conn===c);if(s){s.conn=null;broadcast()}});
@@ -487,17 +490,27 @@ function scheduleBots(){
 function startGuest(code){
   S.role='guest';S.code=code;S.net='Подключение к комнате…';render();
   if(typeof Peer==='undefined'){S.net='Сетевая библиотека не загрузилась';render();return}
+  guestPeer();
+}
+function guestPeer(){
+  try{peer&&peer.destroy()}catch(_){}
   peer=new Peer();
   peer.on('open',connect);
-  peer.on('error',e=>{if(e.type==='peer-unavailable'){S.net='Комната не найдена или хозяин офлайн. Повтор…';render();setTimeout(connect,4000)}else{S.net='Ошибка сети: '+e.type;render()}});
+  peer.on('disconnected',()=>{const p=peer;setTimeout(()=>{if(p===peer&&!p.destroyed)try{p.reconnect()}catch(e){}},2000)});
+  peer.on('error',e=>{
+    if(e.type==='peer-unavailable'){S.net='Комната не найдена или хозяин офлайн. Повтор…';render();retryConnect(4000)}
+    else{S.net='Ошибка сети, переподключение…';render();clearTimeout(guestPeer.t);guestPeer.t=setTimeout(guestPeer,4000)}});
 }
+function retryConnect(ms){clearTimeout(connect.t);connect.t=setTimeout(connect,ms)}
 function connect(){
   if(conn&&conn.open)return;
-  conn=peer.connect(PEER_PREFIX+S.code,{reliable:true});
-  conn.on('open',()=>{S.net='Подключено';conn.send({t:'hello',name:ME.name,token:ME.token});render()});
-  conn.on('data',m=>{if(m&&m.t==='state')onState(m);else if(m&&m.t==='err'){toast(m.msg);S.net=m.msg;render()}});
-  conn.on('close',()=>{S.net='Связь потеряна. Переподключение…';render();setTimeout(connect,3000)});
+  if(!peer||peer.destroyed||peer.disconnected){retryConnect(2000);return}
+  const c=peer.connect(PEER_PREFIX+S.code,{reliable:true});conn=c;
+  c.on('open',()=>{if(conn!==c)return;S.net='Подключено';c.send({t:'hello',name:ME.name,token:ME.token});render()});
+  c.on('data',m=>{if(conn!==c)return;if(m&&m.t==='state')onState(m);else if(m&&m.t==='err'){toast(m.msg);S.net=m.msg;render()}});
+  c.on('close',()=>{if(conn!==c)return;S.net='Связь потеряна. Переподключение…';render();retryConnect(3000)});
 }
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.role==='guest'&&!(conn&&conn.open))retryConnect(300)});
 function send(a){if(S.role==='host')hostAct(0,a);else if(conn&&conn.open)conn.send({t:'act',a});else toast('Нет связи с хозяином')}
 
 /* ===================== UI ===================== */
@@ -579,7 +592,7 @@ function renderGame(m){
   const anyMove=L.throw.length||Object.keys(L.defend).length||L.transfer.length;
   const honest=c=>!v.opts.cheat||(L.hThrow||[]).includes(c)||!!(L.hDefend||{})[c]||L.transfer.includes(c);
   v.hand.forEach(c=>{const ok=playable(c);const e=cardEl(c,(ok?'ok':(anyMove?'dim':''))+(ok&&!honest(c)?' cheat':'')+(S.sel===c?' sel':''));
-    if(ok)e.addEventListener('pointerdown',ev=>startDrag(ev,c,v,e));hd.appendChild(e)});
+    if(ok)e.addEventListener('pointerdown',ev=>startDrag(ev,c,v,e));if(S.dragging===c)e.style.visibility='hidden';hd.appendChild(e)});
   fitHand();
   // actions
   const ac=$('actions');ac.innerHTML='';
@@ -595,6 +608,7 @@ function renderGame(m){
   else if(v.players[me].out)st=`Вы вышли из игры (место ${v.players[me].place}). Ждём окончания…`;
   else if(me===v.defender)st=v.taking?'Вы берёте карты — ждём подкидывания':(v.table.length?(S.sel?'Выберите карту на столе, которую бить':'Отбивайтесь: выберите карту'):'Под вас ходят…');
   else if(me===v.attacker&&!v.table.length)st='Ваш ход — выберите карту';
+  else if(v.opts.cheat&&L.pass&&!L.hThrow.length&&v.table.every(t=>t.d||v.taking))st='Проверьте стол и нажмите «'+(v.taking?'Хватит, пусть берёт':'Бито')+'»';
   else if(L.throw.length)st=v.taking?'Можно подкинуть вдогонку':'Можно подкинуть';
   else{const who=v.table.length?(v.table.some(t=>!t.d)&&!v.taking?v.players[v.defender].name:'подкидывающих'):v.players[v.attacker].name;st='Ждём: '+who}
   if(S.catchMode)st='Нажмите на подозрительную карту на столе';
@@ -692,9 +706,9 @@ function startDrag(ev,c,v,el){
       else if(ht.length===1)a={type:'defend',card:c,idx:ht[0]};
       else if(tg.length===1)a={type:'defend',card:c,idx:tg[0]};
       else if(tg.length)toast('Перетащите карту на ту, которую бьёте')}
-    const gr=drag.g.getBoundingClientRect();
+    const gr=drag.g.getBoundingClientRect();el=document.querySelector('#hand .card[data-c="'+c+'"]')||el;
     if(a){S.drop={c,r:gr,t:Date.now()};drag.g.remove();S.sel=null;send(a);
-      setTimeout(()=>{if(document.body.contains(el))el.style.visibility=''},1500)}
+      setTimeout(()=>{const x=document.querySelector('#hand .card[data-c="'+c+'"]');if(x)x.style.visibility=''},1500)}
     else{const r=el.getBoundingClientRect();drag.g.animate([{transform:'rotate(-5deg) scale(1.1)'},{transform:`translate(${r.left-gr.left}px,${r.top-gr.top}px)`}],{duration:250,easing:'ease-out'}).onfinish=()=>{drag.g.remove();el.style.visibility=''};
       document.querySelectorAll('#table .pair').forEach(p=>p.classList.remove('target','cheatT'))}
   };
