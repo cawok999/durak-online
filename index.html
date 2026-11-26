@@ -161,7 +161,7 @@ body{background:radial-gradient(ellipse at 50% 45%,#16774b 0%,#0d5534 45%,#062c1
     <div class="row"><label><input type="checkbox" id="oTomato"> 🍅 Помидоры: после партии можно кидаться в соперников</label></div>
     <div class="row"><label><input type="checkbox" id="oPistol"> 🔫 Пистолет: дурак получает его в следующей партии (3 выстрела)</label></div>
     <div class="row"><label><input type="checkbox" id="oRunner"> 🐱 Иногда по столу пробегает котик</label></div>
-    <div class="row"><label>Своя картинка бегуна</label><input id="oRunnerImg" maxlength="400" placeholder="https://…/картинка.png (необязательно)" style="flex:1;min-width:0"></div>
+    <div class="row"><label>Своя картинка бегуна</label><input id="oRunnerImg" maxlength="400" placeholder="ссылка https://… на PNG или GIF (запомнится)" style="flex:1;min-width:0"></div>
     <h3 style="margin:14px 0 6px">Игроки <span id="lCount" class="muted"></span></h3>
     <div id="lSeats"></div>
     <div class="row" id="hostBtns">
@@ -527,7 +527,7 @@ let botTimer=null;
 const ME={name:localStorage.getItem('durak_name')||'',token:localStorage.getItem('durak_token')||(Math.random().toString(36).slice(2)+Date.now().toString(36))};
 localStorage.setItem('durak_token',ME.token);
 const BOTN=['Бот Вася','Бот Маша','Бот Петя','Бот Оля','Бот Гриша','Бот Нина'];
-const defOpts=()=>({mode:'podkidnoy',deck:36,throwIn:'all',teams:0,first5:false,trumpShow:false,cheat:0,bots:'smart',tomatoes:1,pistol:1,runner:1,runnerImg:''});
+const defOpts=()=>({mode:'podkidnoy',deck:36,throwIn:'all',teams:0,first5:false,trumpShow:false,cheat:0,bots:'smart',tomatoes:1,pistol:1,runner:1,runnerImg:localStorage.getItem('durak_runnerImg')||''});
 function saveHost(){if(!H)return;const s={code:H.code,opts:H.opts,seats:H.seats.map(x=>({name:x.name,isBot:x.isBot,token:x.token})),game:H.game,chat:H.chat};localStorage.setItem('durak_host',JSON.stringify(s))}
 function loadHost(){try{return JSON.parse(localStorage.getItem('durak_host'))}catch(e){return null}}
 function newCode(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='';for(let i=0;i<6;i++)s+=A[rnd(A.length)];return s}
@@ -604,7 +604,7 @@ function hostAct(i,a){
 }
 function lobbyOp(a){
   if(a.op==='opt'){const o={...H.opts};if(['mode','throwIn'].includes(a.k))o[a.k]=String(a.v);if(a.k==='bots')o.bots=a.v==='easy'?'easy':'smart';if(a.k==='deck')o.deck=+a.v;if(['teams','first5','trumpShow','cheat','tomatoes','pistol','runner'].includes(a.k))o[a.k]=a.v?1:0;
-    if(a.k==='runnerImg'){const u=String(a.v||'').trim();o.runnerImg=/^https:\/\/[^\s"'<>]+$/.test(u)&&u.length<=400?u:''}H.opts=o}
+    if(a.k==='runnerImg'){const u=String(a.v||'').trim();o.runnerImg=/^https:\/\/[^\s"'<>]+$/.test(u)&&u.length<=400?u:'';localStorage.setItem('durak_runnerImg',o.runnerImg)}H.opts=o}
   if(a.op==='bot'&&H.seats.length<MAXP[H.opts.deck]){const used=H.seats.map(s=>s.name);H.seats.push({name:BOTN.find(n=>!used.includes(n))||'Бот',isBot:true,token:'bot'+Math.random()})}
   if(a.op==='kick'&&a.i>0&&a.i<H.seats.length){const s=H.seats[a.i];if(s.conn){try{s.conn.send({t:'err',msg:'Вас убрали из комнаты'});s.conn.close()}catch(e){}}H.seats.splice(a.i,1)}
   if(a.op==='toBot'&&H.game&&a.i>0){H.seats[a.i].isBot=true;H.game.players[a.i].isBot=true;H.seats[a.i].name=H.game.players[a.i].name+' (бот)';H.game.players[a.i].name=H.seats[a.i].name}
